@@ -1,948 +1,1841 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fitness Report Generator</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Training Lab — Strava Analyser</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #0e0f0f;
+    --surface: #161718;
+    --surface2: #1e2021;
+    --border: rgba(255,255,255,0.07);
+    --border2: rgba(255,255,255,0.12);
+    --text: #f0ede8;
+    --muted: #888580;
+    --faint: #444240;
+    --orange: #FC4C02;
+    --orange-dim: rgba(252,76,2,0.12);
+    --orange-glow: rgba(252,76,2,0.25);
+    --green: #4ade80;
+    --red: #f87171;
+    --blue: #60a5fa;
+    --amber: #fbbf24;
+    --garmin: #00B2F0;
+    --garmin-dim: rgba(0,178,240,0.12);
+    --garmin-glow: rgba(0,178,240,0.25);
+    --mono: 'DM Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
 
-    :root {
-      --bg: #0d1117;
-      --surface: #161b22;
-      --border: #30363d;
-      --text: #e6edf3;
-      --muted: #7d8590;
-      --strava: #FC4C02;
-      --strava-dim: #7a2501;
-      --garmin: #00B2F0;
-      --garmin-dim: #005f82;
-      --success: #3fb950;
-      --error: #f85149;
-      --warning: #d29922;
-      --report-bg: #010409;
-      --report-text: #c9d1d9;
-    }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      padding: 24px 16px 48px;
-    }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    font-size: 14px;
+  }
 
-    header {
-      text-align: center;
-      margin-bottom: 32px;
-    }
-    header h1 {
-      font-size: 1.6rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      margin-bottom: 6px;
-    }
-    header p { color: var(--muted); font-size: 0.9rem; }
+  /* ─── LAYOUT ─── */
+  .shell {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    grid-template-rows: 56px 1fr;
+    min-height: 100vh;
+  }
 
-    .container { max-width: 860px; margin: 0 auto; }
+  /* ─── TOPBAR ─── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
 
-    .cards {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-      margin-bottom: 20px;
-    }
-    @media (max-width: 620px) { .cards { grid-template-columns: 1fr; } }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 15px; font-weight: 700; letter-spacing: -0.02em;
+  }
 
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 20px;
-    }
-    .card-title {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 600;
-      font-size: 1rem;
-      margin-bottom: 16px;
-    }
-    .dot {
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      background: var(--muted);
-      flex-shrink: 0;
-      transition: background 0.2s;
-    }
-    .dot.connected { background: var(--success); }
-    .dot.error { background: var(--error); }
+  .logo-mark {
+    width: 28px; height: 28px; background: var(--orange);
+    border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  }
 
-    .status-line {
-      font-size: 0.82rem;
-      color: var(--muted);
-      margin-bottom: 14px;
-      min-height: 1.2em;
-    }
-    .status-line.ok { color: var(--success); }
-    .status-line.err { color: var(--error); }
+  .logo-mark svg { width: 16px; height: 16px; }
 
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.88rem;
-      font-weight: 500;
-      padding: 9px 16px;
-      border-radius: 6px;
-      border: 1px solid transparent;
-      cursor: pointer;
-      transition: opacity 0.15s, background 0.15s;
-      text-decoration: none;
-      background: none;
-      color: var(--text);
-    }
-    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
-    .btn-strava { background: var(--strava); border-color: var(--strava); }
-    .btn-strava:hover:not(:disabled) { opacity: 0.88; }
-    .btn-disconnect { background: transparent; border-color: var(--border); color: var(--muted); font-size: 0.8rem; padding: 6px 12px; }
-    .btn-disconnect:hover { border-color: var(--error); color: var(--error); }
-    .btn-generate {
-      width: 100%;
-      justify-content: center;
-      background: linear-gradient(135deg, var(--strava) 0%, #c73d00 50%, var(--garmin-dim) 100%);
-      border: none;
-      font-size: 1rem;
-      padding: 14px;
-      border-radius: 8px;
-      font-weight: 600;
-      letter-spacing: 0.01em;
-    }
-    .btn-generate:hover:not(:disabled) { opacity: 0.88; }
-    .btn-copy {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 0.82rem;
-      padding: 7px 14px;
-      border-radius: 6px;
-    }
-    .btn-copy:hover { border-color: var(--success); color: var(--success); }
-    .btn-copy.copied { border-color: var(--success); color: var(--success); }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
 
-    label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 5px; }
-    input[type="email"], input[type="password"], input[type="text"] {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 0.88rem;
-      padding: 8px 10px;
-      margin-bottom: 10px;
-      outline: none;
-      transition: border-color 0.15s;
-    }
-    input:focus { border-color: var(--garmin); }
-    .form-row { display: flex; gap: 8px; align-items: center; }
-    .form-row input { flex: 1; margin: 0; }
+  .athlete-pill {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px 4px 6px;
+    font-size: 12px; color: var(--muted);
+  }
 
-    .mfa-row { margin-top: 2px; }
+  .athlete-avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--orange-dim); border: 1px solid var(--orange-glow);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 600; color: var(--orange);
+  }
 
-    .section { margin-bottom: 20px; }
+  .btn-disconnect {
+    background: none; border: 1px solid var(--border2); color: var(--muted);
+    padding: 5px 12px; border-radius: 6px; font-family: var(--sans);
+    font-size: 12px; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-disconnect:hover { border-color: var(--red); color: var(--red); }
 
-    #status-msg {
-      min-height: 1.4em;
-      font-size: 0.88rem;
-      color: var(--muted);
-      text-align: center;
-      padding: 6px 0;
-    }
-    #status-msg.err { color: var(--error); }
-    #status-msg.ok { color: var(--success); }
+  /* ─── SIDEBAR ─── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    background: var(--surface);
+    padding: 20px 0;
+  }
 
-    .spinner {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid rgba(255,255,255,0.25);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
+  .sidebar-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+    color: var(--faint); text-transform: uppercase;
+    padding: 0 20px; margin-bottom: 10px;
+  }
 
-    #report-section { display: none; }
-    .report-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    .report-header h2 { font-size: 0.95rem; font-weight: 600; }
+  .sidebar-filters {
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .filter-search {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 6px 10px;
+  }
+  .filter-search input {
+    background: none; border: none; outline: none;
+    color: var(--text); font-family: var(--sans); font-size: 12px; width: 100%;
+  }
+  .filter-search input::placeholder { color: var(--faint); }
+  .filter-row { display: flex; gap: 6px; }
+  .filter-select {
+    flex: 1; background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 5px 8px;
+    color: var(--muted); font-family: var(--mono); font-size: 11px; outline: none; cursor: pointer;
+  }
+  .filter-select:focus { border-color: var(--orange-glow); }
+  .filter-clear {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; color: var(--faint); font-family: var(--mono);
+    font-size: 11px; cursor: pointer; white-space: nowrap;
+  }
+  .filter-clear:hover { color: var(--orange); border-color: var(--orange-glow); }
+  .sidebar-count { font-size: 10px; color: var(--faint); font-family: var(--mono); padding: 6px 20px 4px; }
 
-    #report-output {
-      background: var(--report-bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 20px 22px;
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 0.78rem;
-      line-height: 1.55;
-      color: var(--report-text);
-      white-space: pre;
-      overflow-x: auto;
-      max-height: 80vh;
-      overflow-y: auto;
-    }
+  .activity-item {
+    padding: 14px 20px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: all 0.15s;
+    border-bottom: 1px solid var(--border);
+  }
+  .activity-item:hover { background: var(--surface2); border-left-color: var(--orange-glow); }
+  .activity-item.active { background: var(--surface2); border-left-color: var(--orange); }
 
-    details {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      margin-top: 32px;
-    }
-    summary {
-      padding: 12px 16px;
-      cursor: pointer;
-      font-size: 0.85rem;
-      color: var(--muted);
-      user-select: none;
-    }
-    summary:hover { color: var(--text); }
-    .setup-body {
-      padding: 0 16px 16px;
-      font-size: 0.82rem;
-      color: var(--muted);
-      line-height: 1.7;
-    }
-    .setup-body h3 { color: var(--text); margin: 12px 0 4px; font-size: 0.88rem; }
-    .setup-body code {
-      background: var(--bg);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 0.8rem;
-      color: var(--garmin);
-    }
-    .setup-body ol { padding-left: 20px; }
-    .setup-body li { margin-bottom: 4px; }
-  </style>
+  .act-name { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .act-date { font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 8px; }
+  .act-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  .chip {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--border);
+    padding: 2px 7px; border-radius: 4px;
+  }
+
+  /* ─── MAIN ─── */
+  .main {
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  /* ─── AUTH SCREEN ─── */
+  .auth-screen {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: calc(100vh - 56px);
+    text-align: center; padding: 2rem;
+    grid-column: 1 / -1;
+  }
+
+  .auth-title { font-size: 36px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 10px; }
+  .auth-sub { font-size: 14px; color: var(--muted); max-width: 380px; line-height: 1.6; margin-bottom: 32px; }
+
+  .btn-strava {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: var(--orange); color: white;
+    padding: 14px 28px; border-radius: 10px;
+    font-family: var(--sans); font-size: 15px; font-weight: 600;
+    text-decoration: none; cursor: pointer; border: none;
+    transition: all 0.15s; letter-spacing: -0.01em;
+  }
+  .btn-strava:hover { background: #e04400; transform: translateY(-1px); }
+  .btn-strava svg { width: 20px; height: 20px; }
+
+  .auth-note { font-size: 12px; color: var(--faint); margin-top: 16px; }
+
+  /* ─── EMPTY STATE ─── */
+  .empty-state {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    min-height: calc(100vh - 56px);
+    text-align: center; color: var(--muted);
+  }
+  .empty-icon { font-size: 40px; margin-bottom: 16px; opacity: 0.4; }
+  .empty-state p { font-size: 13px; }
+
+  /* ─── DETAIL ─── */
+  .detail { padding: 28px 32px; }
+
+  .detail-header { margin-bottom: 24px; }
+  .detail-title { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; margin-bottom: 4px; }
+  .detail-meta { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+  .type-badge {
+    display: inline-block; font-size: 10px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 4px; margin-left: 10px;
+    background: var(--orange-dim); color: var(--orange); border: 1px solid var(--orange-glow);
+  }
+
+  /* ─── METRICS GRID ─── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 10px;
+    margin-bottom: 28px;
+  }
+
+  .metric {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  .metric-val {
+    font-family: var(--mono);
+    font-size: 22px; font-weight: 500;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .metric-lbl {
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--faint); margin-top: 4px;
+  }
+
+  .metric.highlight { border-color: var(--orange-glow); background: var(--orange-dim); }
+  .metric.highlight .metric-val { color: var(--orange); }
+
+  /* ─── SECTION ─── */
+  .section { margin-bottom: 28px; }
+  .section-head {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--faint);
+    margin-bottom: 14px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-head::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ─── CHART ─── */
+  .chart-tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .chart-tab {
+    font-family: var(--mono); font-size: 11px;
+    padding: 5px 12px; border-radius: 5px;
+    border: 1px solid var(--border2); background: none;
+    color: var(--muted); cursor: pointer; transition: all 0.15s;
+    font-weight: 400;
+  }
+  .chart-tab:hover { border-color: var(--orange-glow); color: var(--text); }
+  .chart-tab.active { background: var(--orange); border-color: var(--orange); color: white; }
+
+  .chart-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px;
+  }
+
+  .chart-legend {
+    display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+  .chart-wrap { position: relative; width: 100%; height: 240px; }
+
+  /* ─── ZONES ─── */
+  .zone-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .zone-name { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 56px; flex-shrink: 0; }
+  .zone-track { flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+  .zone-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .zone-pct { font-family: var(--mono); font-size: 11px; color: var(--muted); width: 32px; text-align: right; }
+  .zone-time { font-family: var(--mono); font-size: 11px; color: var(--faint); width: 40px; text-align: right; }
+
+  /* ─── SPIKES ─── */
+  .spike-grid { display: flex; flex-direction: column; gap: 0; }
+  .spike-row {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .spike-row:last-child { border-bottom: none; }
+  .spike-icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; font-size: 14px;
+  }
+  .spike-body { flex: 1; }
+  .spike-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .spike-detail { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .spike-km { font-family: var(--mono); font-size: 12px; color: var(--faint); flex-shrink: 0; padding-top: 2px; }
+
+  /* ─── ANALYSE BTN ─── */
+  .analyse-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 20px 24px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap;
+  }
+
+  .analyse-copy { flex: 1; }
+  .analyse-copy strong { font-size: 14px; font-weight: 600; display: block; margin-bottom: 4px; }
+  .analyse-copy p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  .btn-analyse {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--orange); color: white;
+    padding: 11px 22px; border-radius: 8px;
+    font-family: var(--sans); font-size: 13px; font-weight: 600;
+    border: none; cursor: pointer; transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-analyse:hover { background: #e04400; }
+  .btn-analyse.copied { background: #16a34a; }
+  .btn-analyse svg { width: 15px; height: 15px; }
+
+  /* ─── LOADING / ERROR ─── */
+  .loading-state {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 200px; color: var(--muted); font-size: 13px; gap: 10px;
+  }
+
+  .spinner {
+    width: 16px; height: 16px; border: 2px solid var(--border2);
+    border-top-color: var(--orange); border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-banner {
+    background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2);
+    border-radius: 8px; padding: 12px 16px; font-size: 13px;
+    color: var(--red); margin: 16px 0;
+  }
+
+  /* ─── SPLITS TABLE ─── */
+  .splits-table { width: 100%; border-collapse: collapse; }
+  .splits-table th {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--faint); text-align: left;
+    padding: 6px 12px; border-bottom: 1px solid var(--border);
+  }
+  .splits-table td {
+    font-family: var(--mono); font-size: 12px; color: var(--muted);
+    padding: 9px 12px; border-bottom: 1px solid var(--border);
+  }
+  .splits-table tr:last-child td { border-bottom: none; }
+  .splits-table td:first-child { color: var(--text); font-weight: 500; }
+  .splits-table .pace-fast { color: var(--green); }
+  .splits-table .pace-slow { color: var(--red); }
+  .splits-table .hr-high { color: var(--red); }
+  .splits-table .hr-med { color: var(--amber); }
+
+  /* ─── EFFORT / NOTES ─── */
+  .effort-wrap {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .effort-row { display: flex; align-items: center; gap: 12px; }
+  .effort-lbl { font-size: 12px; color: var(--muted); min-width: 130px; flex-shrink: 0; }
+  .effort-select {
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 6px 10px;
+    color: var(--text); font-family: var(--mono); font-size: 13px; outline: none; cursor: pointer;
+  }
+  .effort-select:focus { border-color: var(--orange-glow); }
+  .effort-hint { font-size: 11px; color: var(--faint); font-family: var(--mono); }
+  .effort-input {
+    flex: 1; background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 6px 10px;
+    color: var(--text); font-family: var(--sans); font-size: 13px; outline: none;
+  }
+  .effort-input:focus { border-color: var(--orange-glow); }
+  .effort-input::placeholder { color: var(--faint); }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* ─── MAP ─── */
+  .map-section { margin-bottom: 28px; }
+  #run-map {
+    width: 100%; height: 540px;
+    border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .map-tooltip {
+    background: #1e2021 !important;
+    border: 1px solid rgba(255,255,255,0.12) !important;
+    border-radius: 6px !important;
+    color: #f0ede8 !important;
+    font-family: 'DM Mono', monospace !important;
+    font-size: 11px !important;
+    padding: 8px 12px !important;
+    line-height: 1.7 !important;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  }
+  .map-color-legend {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 10px; font-size: 11px; color: var(--faint);
+    font-family: var(--mono);
+  }
+  .map-color-bar {
+    flex: 1; height: 6px; border-radius: 3px;
+    background: linear-gradient(to right, #4ade80, #fbbf24, #f97316, #f87171);
+  }
+  .map-color-labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); font-family: var(--mono); margin-top: 4px; }
+  .map-mode-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  .map-tab {
+    font-family: var(--mono); font-size: 11px; padding: 4px 10px;
+    border-radius: 5px; border: 1px solid var(--border2);
+    background: none; color: var(--muted); cursor: pointer;
+  }
+  .map-tab.active { background: var(--orange); border-color: var(--orange); color: white; }
+  .leaflet-tile-pane { filter: grayscale(0.8) brightness(0.5) contrast(1.1); }
+  .leaflet-control-attribution { display: none !important; }
+
+  /* ─── GARMIN ─── */
+  .btn-garmin {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: none; border: 1px solid var(--border2); color: var(--muted);
+    padding: 5px 12px; border-radius: 6px; font-family: var(--sans);
+    font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-garmin:hover { border-color: var(--garmin); color: var(--garmin); }
+  .btn-garmin.connected { border-color: var(--garmin-glow); color: var(--garmin); }
+  .btn-garmin svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  .garmin-modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.75); z-index: 1000;
+    align-items: center; justify-content: center;
+  }
+  .garmin-modal-overlay.open { display: flex; }
+  .garmin-modal {
+    background: var(--surface); border: 1px solid var(--border2);
+    border-radius: 14px; padding: 28px; width: 400px; max-width: 92vw;
+  }
+  .garmin-modal-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .garmin-modal-sub { font-size: 12px; color: var(--muted); margin-bottom: 22px; line-height: 1.6; }
+  .garmin-modal-field { margin-bottom: 14px; }
+  .garmin-modal-label {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--faint); margin-bottom: 6px; display: block;
+  }
+  .garmin-modal-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 7px; padding: 9px 12px;
+    color: var(--text); font-family: var(--mono); font-size: 13px; outline: none;
+  }
+  .garmin-modal-input:focus { border-color: var(--garmin-glow); }
+  .garmin-modal-actions { display: flex; gap: 8px; margin-top: 22px; }
+  .btn-garmin-primary {
+    flex: 1; background: var(--garmin); color: #0a0a0a; border: none;
+    border-radius: 7px; padding: 10px; font-family: var(--sans);
+    font-size: 13px; font-weight: 700; cursor: pointer; transition: background 0.15s;
+  }
+  .btn-garmin-primary:hover { background: #00c8ff; }
+  .btn-garmin-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-garmin-cancel {
+    background: none; border: 1px solid var(--border); color: var(--muted);
+    border-radius: 7px; padding: 10px 18px; font-family: var(--sans);
+    font-size: 13px; cursor: pointer; transition: all 0.15s;
+  }
+  .btn-garmin-cancel:hover { border-color: var(--border2); color: var(--text); }
+  .garmin-modal-error {
+    color: var(--red); font-size: 12px; font-family: var(--mono);
+    margin-top: 10px; min-height: 16px;
+  }
+  .garmin-modal-note { font-size: 11px; color: var(--faint); margin-top: 14px; line-height: 1.5; }
+
+  /* Garmin health section */
+  .garmin-fetch-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .garmin-time-select {
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 7px 10px;
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    outline: none; cursor: pointer;
+  }
+  .garmin-time-select:focus { border-color: var(--garmin-glow); }
+  .garmin-custom-dt {
+    background: var(--bg); border: 1px solid var(--border2);
+    border-radius: 6px; padding: 7px 10px;
+    color: var(--text); font-family: var(--mono); font-size: 12px;
+    outline: none; display: none; color-scheme: dark;
+  }
+  .garmin-custom-dt.visible { display: block; }
+  .btn-garmin-fetch {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--garmin-dim); border: 1px solid var(--garmin-glow);
+    color: var(--garmin); border-radius: 6px; padding: 7px 16px;
+    font-family: var(--sans); font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-garmin-fetch:hover { background: rgba(0,178,240,0.2); border-color: var(--garmin); }
+  .btn-garmin-fetch:disabled { opacity: 0.5; cursor: not-allowed; }
+  .garmin-spinner {
+    width: 13px; height: 13px; border: 2px solid rgba(0,178,240,0.3);
+    border-top-color: var(--garmin); border-radius: 50%;
+    animation: spin 0.7s linear infinite; display: none;
+  }
+  .garmin-report {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 20px;
+    font-family: var(--mono); font-size: 12px; line-height: 1.75;
+    color: var(--muted); white-space: pre; overflow-x: auto;
+    max-height: 650px; overflow-y: auto;
+  }
+  .garmin-not-connected {
+    font-size: 13px; color: var(--faint); font-family: var(--mono);
+    padding: 14px 18px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px;
+  }
+  .garmin-not-connected a { color: var(--garmin); text-decoration: none; }
+  .garmin-not-connected a:hover { text-decoration: underline; }
+</style>
 </head>
 <body>
-<div class="container">
-  <header>
-    <h1>Fitness Report Generator</h1>
-    <p>Pull your latest Strava run + Garmin wellness data into one formatted report</p>
-  </header>
 
-  <div class="cards">
-    <!-- Strava card -->
-    <div class="card">
-      <div class="card-title">
-        <div class="dot" id="strava-dot"></div>
-        <span style="color: var(--strava)">▶</span>
-        <span>Strava</span>
+<div class="shell" id="shell">
+
+  <!-- TOPBAR -->
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
       </div>
-      <div class="status-line" id="strava-status">Not connected</div>
-      <div id="strava-connect-area">
-        <button class="btn btn-strava" id="btn-strava-connect" onclick="connectStrava()">
-          Connect via OAuth
-        </button>
-      </div>
-      <div id="strava-connected-area" style="display:none">
-        <button class="btn btn-disconnect" onclick="disconnectStrava()">Disconnect</button>
-      </div>
+      Training Lab
     </div>
-
-    <!-- Garmin card -->
-    <div class="card">
-      <div class="card-title">
-        <div class="dot" id="garmin-dot"></div>
-        <span style="color: var(--garmin)">◆</span>
-        <span>Garmin Connect</span>
-      </div>
-      <div class="status-line" id="garmin-status">Enter credentials below</div>
-      <label for="garmin-email">Email</label>
-      <input type="email" id="garmin-email" placeholder="you@example.com" oninput="onGarminInput()" />
-      <label for="garmin-password">Password</label>
-      <input type="password" id="garmin-password" placeholder="••••••••" oninput="onGarminInput()" />
-      <div class="mfa-row" id="mfa-row" style="display:none">
-        <label for="garmin-mfa">2FA / MFA Code</label>
-        <input type="text" id="garmin-mfa" placeholder="6-digit code" maxlength="8" />
-      </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
-        <input type="checkbox" id="garmin-remember" onchange="onRememberToggle()" style="width:auto;margin:0">
-        <label for="garmin-remember" style="margin:0;cursor:pointer">Remember email</label>
-        <span style="flex:1"></span>
-        <span id="mfa-toggle" onclick="toggleMFA()"
-          style="font-size:0.78rem;color:var(--muted);cursor:pointer;text-decoration:underline">
-          Have 2FA?
-        </span>
-      </div>
+    <div class="topbar-right" id="topbar-right">
+      <button class="btn-analyse" id="copy-btn" onclick="copyToClipboard()" style="display:none;padding:7px 16px;font-size:12px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy session data
+      </button>
     </div>
   </div>
 
-  <div class="section">
-    <button class="btn btn-generate" id="btn-generate" onclick="generateReport()" disabled>
-      Generate Report
+  <!-- AUTH -->
+  <div class="auth-screen" id="auth-screen">
+    <div class="auth-title">Training Lab</div>
+    <div class="auth-sub">Full-granularity Strava analysis. Every heartbeat, every hill, every split — fed directly to Claude.</div>
+    <button class="btn-strava" id="strava-auth-btn">
+      <svg viewBox="0 0 24 24" fill="white"><path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169"/></svg>
+      Connect with Strava
     </button>
-    <div id="status-msg"></div>
+    <div class="auth-note">Read-only access. Your data stays in your browser.</div>
+    <div id="auth-error"></div>
   </div>
 
-  <div id="report-section">
-    <div class="report-header">
-      <h2>Report</h2>
-      <button class="btn btn-copy" id="btn-copy" onclick="copyReport()">Copy to clipboard</button>
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar" style="display:none;">
+    <div class="sidebar-filters">
+      <div class="filter-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;color:var(--faint);flex-shrink:0;"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input type="text" id="filter-name" placeholder="Search by name..." oninput="applyFilters()">
+      </div>
+      <div class="filter-row">
+        <select class="filter-select" id="filter-dist" onchange="applyFilters()">
+          <option value="">Any distance</option>
+          <option value="0-5">Under 5km</option>
+          <option value="5-10">5-10km</option>
+          <option value="10-21">10-21km</option>
+          <option value="21-42">Half-Marathon</option>
+          <option value="42-999">Marathon+</option>
+        </select>
+        <select class="filter-select" id="filter-type" onchange="applyFilters()">
+          <option value="">Any type</option>
+          <option value="0">Easy run</option>
+          <option value="2">Long run</option>
+          <option value="3">Workout</option>
+          <option value="1">Race</option>
+        </select>
+      </div>
+      <div class="filter-row">
+        <select class="filter-select" id="filter-period" onchange="applyFilters()">
+          <option value="">Any time</option>
+          <option value="7">Last 7 days</option>
+          <option value="30">Last 30 days</option>
+          <option value="90">Last 3 months</option>
+          <option value="180">Last 6 months</option>
+          <option value="365">Last year</option>
+        </select>
+        <button class="filter-clear" onclick="clearFilters()">Clear</button>
+      </div>
     </div>
-    <div id="report-output"></div>
+    <div class="sidebar-count" id="sidebar-count"></div>
+    <div id="activity-list"></div>
   </div>
 
-  <details>
-    <summary>⚙ Setup instructions</summary>
-    <div class="setup-body">
-      <h3>1 — Create a Strava API Application</h3>
-      <ol>
-        <li>Go to <strong>strava.com/settings/api</strong> and create an app.</li>
-        <li>Set <strong>Authorization Callback Domain</strong> to your Netlify site domain (e.g. <code>your-site.netlify.app</code>).</li>
-        <li>Note your <strong>Client ID</strong> and <strong>Client Secret</strong>.</li>
-      </ol>
-      <h3>2 — Deploy to Netlify</h3>
-      <ol>
-        <li>Push this project to a GitHub repo.</li>
-        <li>In Netlify, click <em>Add new site → Import from Git</em>, select the repo.</li>
-        <li>In <em>Site settings → Environment variables</em>, add:<br>
-          <code>STRAVA_CLIENT_ID</code> = your client ID<br>
-          <code>STRAVA_CLIENT_SECRET</code> = your client secret
-        </li>
-        <li>Trigger a redeploy so the env vars take effect.</li>
-      </ol>
-      <h3>3 — Garmin Connect</h3>
-      <p>Enter your Garmin email and password directly — no API keys needed. Credentials travel over HTTPS and are never stored. If Garmin asks for 2FA, tick <em>Have 2FA?</em> to reveal the MFA field.</p>
-      <h3>Notes</h3>
-      <ul style="padding-left:20px">
-        <li>The Garmin function may time out on Netlify's free tier (10 s limit). Netlify Pro raises this to 26 s.</li>
-        <li>Garmin's SSO occasionally blocks automated logins. If you get repeated auth failures, wait 30 minutes and retry.</li>
-        <li>Power data in Strava streams requires a running power meter or compatible device/app (e.g. Stryd).</li>
-      </ul>
+  <!-- MAIN -->
+  <div class="main" id="main-panel" style="display:none;">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">↑</div>
+      <p>Select a run to analyse</p>
     </div>
-  </details>
+    <div id="detail" style="display:none;"></div>
+  </div>
+
+</div>
+
+<!-- GARMIN CONNECT MODAL -->
+<div class="garmin-modal-overlay" id="garmin-modal" onclick="handleModalClick(event)">
+  <div class="garmin-modal">
+    <div class="garmin-modal-title">Connect Garmin</div>
+    <div class="garmin-modal-sub">Enter your Garmin Connect credentials. They're stored locally on this device and sent directly to Garmin — never logged or stored on any server.</div>
+    <div class="garmin-modal-field">
+      <label class="garmin-modal-label">Email</label>
+      <input type="email" class="garmin-modal-input" id="garmin-email" placeholder="your@email.com" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('garmin-password').focus()">
+    </div>
+    <div class="garmin-modal-field">
+      <label class="garmin-modal-label">Password</label>
+      <input type="password" class="garmin-modal-input" id="garmin-password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')connectGarmin()">
+    </div>
+    <div id="garmin-modal-error" class="garmin-modal-error"></div>
+    <div class="garmin-modal-actions">
+      <button class="btn-garmin-cancel" onclick="closeGarminModal()">Cancel</button>
+      <button class="btn-garmin-primary" id="garmin-connect-btn" onclick="connectGarmin()">Connect</button>
+    </div>
+    <div class="garmin-modal-note">First connection takes 15-25 seconds while your session is established. Subsequent fetches are much faster.</div>
+  </div>
 </div>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
-const state = {
-  stravaToken: null,
-  stravaRefresh: null,
-  stravaExpiry: null,
-  stravaAthlete: null,
-  garminReady: false,
-};
+const CLIENT_ID = '219057';
+const CLIENT_SECRET = '05cdd04a83a43008d59ce12c5ad4dda0299d98a2';
+const REDIRECT_URI = window.location.origin + window.location.pathname;
+const GARMIN_URL = '/.netlify/functions/garmin-data';
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
-(function init() {
-  // Check URL params from OAuth callback
-  const params = new URLSearchParams(location.search);
-  const at = params.get('strava_access_token');
-  const err = params.get('strava_error');
+let token = null;
+let currentChart = null;
+let streamData = null;
+let currentActivity = null;
+let activities = [];
+let garminData = null;
+let garminTokenData = null;
 
-  if (at) {
-    localStorage.setItem('strava_access_token', at);
-    localStorage.setItem('strava_refresh_token', params.get('strava_refresh_token') || '');
-    localStorage.setItem('strava_expires_at', params.get('strava_expires_at') || '0');
-    localStorage.setItem('strava_athlete', params.get('strava_athlete') || '');
-    history.replaceState(null, '', location.pathname);
+// ─── UTILS ───
+function fmtPace(mps) {
+  if (!mps || mps <= 0) return '--';
+  const s = 1000 / mps;
+  return `${Math.floor(s/60)}:${String(Math.round(s%60)).padStart(2,'0')}`;
+}
+function fmtDist(m) { return (m/1000).toFixed(2) + ' km'; }
+function fmtTime(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`;
+}
+function fmtDate(d) { return new Date(d).toLocaleDateString('en-GB', {weekday:'short', day:'numeric', month:'short', year:'numeric'}); }
+function fmtClock(isoStr) {
+  if (!isoStr) return '--';
+  const m = isoStr.match(/T(\d{2}:\d{2})/);
+  return m ? m[1] : '--';
+}
+function fmtClockEnd(isoStr, elapsedSecs) {
+  if (!isoStr) return '--';
+  const m = isoStr.match(/T(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return '--';
+  const total = parseInt(m[1])*3600 + parseInt(m[2])*60 + parseInt(m[3]) + (elapsedSecs || 0);
+  const h = Math.floor(total / 3600) % 24, min = Math.floor((total % 3600) / 60);
+  return `${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}`;
+}
+function avg(arr) { return arr.length ? arr.reduce((s,v)=>s+v,0)/arr.length : 0; }
+function escapeHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ─── AUTH ───
+function getToken() { try { return localStorage.getItem('tl_strava_token'); } catch(e) { return sessionStorage.getItem('tl_strava_token'); } }
+function saveToken(t) { try { localStorage.setItem('tl_strava_token', t); } catch(e) { sessionStorage.setItem('tl_strava_token', t); } token = t; }
+function clearToken() { try { localStorage.removeItem('tl_strava_token'); } catch(e) { sessionStorage.removeItem('tl_strava_token'); } token = null; }
+
+// ─── GARMIN STORAGE ───
+function getGarminCreds()    { try { return JSON.parse(localStorage.getItem('tl_garmin_creds')); } catch { return null; } }
+function saveGarminCreds(c)  { try { localStorage.setItem('tl_garmin_creds', JSON.stringify(c)); } catch {} }
+function clearGarminCreds()  { try { localStorage.removeItem('tl_garmin_creds'); } catch {} }
+function getGarminTokens()   { try { return JSON.parse(localStorage.getItem('tl_garmin_tokens')); } catch { return null; } }
+function saveGarminTokens(t) { try { localStorage.setItem('tl_garmin_tokens', JSON.stringify(t)); } catch {} }
+function clearGarminTokens() { try { localStorage.removeItem('tl_garmin_tokens'); } catch {} }
+
+document.getElementById('strava-auth-btn').addEventListener('click', () => {
+  window.location.href = `https://www.strava.com/oauth/authorize?client_id=${CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&approval_prompt=auto&scope=activity:read_all`;
+});
+
+async function exchangeCode(code) {
+  const r = await fetch('https://www.strava.com/oauth/token', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({client_id: CLIENT_ID, client_secret: CLIENT_SECRET, code, grant_type: 'authorization_code'})
+  });
+  const d = await r.json();
+  if (d.access_token) return { token: d.access_token, athlete: d.athlete };
+  throw new Error(d.message || 'Authentication failed');
+}
+
+// ─── API ───
+async function apiFetch(path) {
+  const r = await fetch('https://www.strava.com/api/v3' + path, { headers: { Authorization: `Bearer ${token}` } });
+  if (r.status === 401) { clearToken(); location.reload(); }
+  return r.json();
+}
+
+async function fetchActivities() {
+  let all = [], page = 1;
+  while (page <= 5) {
+    const batch = await apiFetch(`/athlete/activities?per_page=200&page=${page}`);
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    const runs = batch.filter(a => a.type === 'Run' || a.sport_type === 'Run');
+    all = all.concat(runs);
+    if (batch.length < 200) break;
+    page++;
+    const el = document.getElementById('activity-list');
+    if (el) el.innerHTML = `<div class="loading-state"><div class="spinner"></div> Loading runs (${all.length} so far)...</div>`;
+  }
+  return all;
+}
+
+async function fetchStreams(id) {
+  return apiFetch(`/activities/${id}/streams?keys=time,distance,velocity_smooth,heartrate,altitude,cadence,grade_smooth,watts,moving,temp,latlng&key_by_type=true`);
+}
+
+// ─── INIT ───
+async function init() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code');
+  const stored = getToken();
+
+  if (code) {
+    window.history.replaceState({}, '', window.location.pathname);
+    try {
+      const { token: t, athlete } = await exchangeCode(code);
+      saveToken(t);
+      await showApp(athlete);
+    } catch(e) {
+      document.getElementById('auth-error').innerHTML = `<div class="error-banner" style="margin-top:20px;">${e.message}</div>`;
+    }
+    return;
   }
 
-  if (err) {
-    setStravaError(decodeURIComponent(err));
-    history.replaceState(null, '', location.pathname);
+  if (stored) { token = stored; await showApp(null); return; }
+}
+
+async function showApp(athlete) {
+  document.getElementById('auth-screen').style.display = 'none';
+  document.getElementById('sidebar').style.display = 'block';
+  document.getElementById('main-panel').style.display = 'block';
+
+  const copyBtn = document.getElementById('copy-btn');
+  const garminHtml = `<button class="btn-garmin" id="garmin-btn">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
+    Connect Garmin
+  </button>`;
+
+  if (athlete) {
+    copyBtn.insertAdjacentHTML('afterend', `
+      ${garminHtml}
+      <div class="athlete-pill">
+        <div class="athlete-avatar">${(athlete.firstname||'?')[0]}</div>
+        ${athlete.firstname} ${athlete.lastname||''}
+      </div>
+      <button class="btn-disconnect" onclick="disconnect()">Disconnect</button>
+    `);
+  } else {
+    copyBtn.insertAdjacentHTML('afterend', `${garminHtml}<button class="btn-disconnect" onclick="disconnect()">Disconnect</button>`);
   }
 
-  // Load from storage
-  const storedToken = localStorage.getItem('strava_access_token');
-  if (storedToken) {
-    state.stravaToken = storedToken;
-    state.stravaRefresh = localStorage.getItem('strava_refresh_token');
-    state.stravaExpiry = Number(localStorage.getItem('strava_expires_at'));
-    state.stravaAthlete = localStorage.getItem('strava_athlete') || 'Athlete';
-    setStravaConnected();
-  } else if (!err) {
-    setStravaDisconnected();
-  }
+  updateGarminBtn();
 
-  // Garmin email from storage
-  const savedEmail = localStorage.getItem('garmin_email');
-  if (savedEmail) {
-    document.getElementById('garmin-email').value = savedEmail;
-    document.getElementById('garmin-remember').checked = true;
-  }
+  document.getElementById('activity-list').innerHTML = `<div class="loading-state"><div class="spinner"></div> Loading runs…</div>`;
 
-  onGarminInput();
-  updateGenerateBtn();
-})();
-
-// ─── Strava OAuth ─────────────────────────────────────────────────────────────
-async function connectStrava() {
-  const btn = document.getElementById('btn-strava-connect');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Loading…';
   try {
-    const r = await fetch('/.netlify/functions/strava-config');
-    const d = await r.json();
-    if (d.error) throw new Error(d.error);
-    location.href = d.authUrl;
-  } catch (e) {
-    setStravaError(e.message);
-    btn.disabled = false;
-    btn.innerHTML = 'Connect via OAuth';
+    const data = await fetchActivities();
+    if (!Array.isArray(data)) throw new Error('Could not load activities');
+    activities = data;
+    applyFilters();
+    const count = document.getElementById('sidebar-count');
+    if (count) count.textContent = `${activities.length} runs loaded`;
+  } catch(e) {
+    document.getElementById('activity-list').innerHTML = `<div class="error-banner" style="margin:12px;">${e.message}</div>`;
   }
 }
 
-function disconnectStrava() {
-  ['strava_access_token','strava_refresh_token','strava_expires_at','strava_athlete']
-    .forEach(k => localStorage.removeItem(k));
-  state.stravaToken = state.stravaRefresh = state.stravaExpiry = state.stravaAthlete = null;
-  setStravaDisconnected();
-  updateGenerateBtn();
+function disconnect() { clearToken(); location.reload(); }
+
+// ─── SIDEBAR ───
+function renderSidebar(acts) {
+  if (!acts.length) { document.getElementById('activity-list').innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px;">No runs found</div>'; return; }
+  document.getElementById('activity-list').innerHTML = acts.map(a => `
+    <div class="activity-item" id="si-${a.id}" onclick="selectActivity(${a.id})">
+      <div class="act-name">${a.name}</div>
+      <div class="act-date">${fmtDate(a.start_date_local)}</div>
+      <div class="act-chips">
+        <span class="chip">${fmtDist(a.distance)}</span>
+        <span class="chip">${fmtPace(a.average_speed)}/km</span>
+        ${a.average_heartrate ? `<span class="chip">${Math.round(a.average_heartrate)}bpm</span>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
-function setStravaConnected() {
-  dot('strava-dot', 'connected');
-  setStatus('strava-status', `Connected as ${state.stravaAthlete}`, 'ok');
-  document.getElementById('strava-connect-area').style.display = 'none';
-  document.getElementById('strava-connected-area').style.display = 'block';
-  updateGenerateBtn();
+// ─── FILTERS ───
+function applyFilters() {
+  const name   = (document.getElementById('filter-name')?.value || '').toLowerCase();
+  const dist   = document.getElementById('filter-dist')?.value || '';
+  const type   = document.getElementById('filter-type')?.value;
+  const period = parseInt(document.getElementById('filter-period')?.value || '0');
+
+  const now = Date.now();
+  const filtered = activities.filter(a => {
+    if (name && !a.name.toLowerCase().includes(name)) return false;
+    if (dist) {
+      const [dMin, dMax] = dist.split('-').map(Number);
+      const km = a.distance / 1000;
+      if (km < dMin || km >= dMax) return false;
+    }
+    if (type !== undefined && type !== '' && String(a.workout_type) !== type) return false;
+    if (period > 0) {
+      const actDate = new Date(a.start_date_local).getTime();
+      if (now - actDate > period * 86400000) return false;
+    }
+    return true;
+  });
+
+  renderSidebar(filtered);
+  const count = document.getElementById('sidebar-count');
+  if (count) count.textContent = `${filtered.length} of ${activities.length} runs`;
 }
 
-function setStravaDisconnected() {
-  dot('strava-dot', '');
-  setStatus('strava-status', 'Not connected', '');
-  document.getElementById('strava-connect-area').style.display = 'block';
-  document.getElementById('strava-connected-area').style.display = 'none';
-  updateGenerateBtn();
+function clearFilters() {
+  const ids = ['filter-name','filter-dist','filter-type','filter-period'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.value = ''; }
+  });
+  applyFilters();
 }
 
-function setStravaError(msg) {
-  dot('strava-dot', 'error');
-  setStatus('strava-status', `Error: ${msg}`, 'err');
-  document.getElementById('strava-connect-area').style.display = 'block';
-  document.getElementById('strava-connected-area').style.display = 'none';
-  updateGenerateBtn();
-}
+// ─── SELECT ACTIVITY ───
+async function selectActivity(id) {
+  document.querySelectorAll('.activity-item').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById(`si-${id}`);
+  if (el) el.classList.add('active');
 
-// ─── Garmin ───────────────────────────────────────────────────────────────────
-function onGarminInput() {
-  const email = document.getElementById('garmin-email').value.trim();
-  const pass = document.getElementById('garmin-password').value;
-  state.garminReady = email.length > 0 && pass.length > 0;
-  if (state.garminReady) {
-    dot('garmin-dot', 'connected');
-    setStatus('garmin-status', 'Ready', 'ok');
-  } else {
-    dot('garmin-dot', '');
-    setStatus('garmin-status', 'Enter credentials below', '');
+  currentActivity = activities.find(a => a.id === id);
+  garminData = null; // clear previous garmin data when switching activity
+  document.getElementById('copy-btn').style.display = 'inline-flex';
+  document.getElementById('empty-state').style.display = 'none';
+  const detail = document.getElementById('detail');
+  detail.style.display = 'block';
+  detail.innerHTML = `<div class="loading-state"><div class="spinner"></div> Loading stream data…</div>`;
+
+  try {
+    streamData = await fetchStreams(id);
+    renderDetail(currentActivity, streamData);
+  } catch(e) {
+    detail.innerHTML = `<div class="detail"><div class="error-banner">Failed to load stream: ${e.message}</div></div>`;
   }
-  updateGenerateBtn();
 }
 
-function onRememberToggle() {
-  const checked = document.getElementById('garmin-remember').checked;
-  if (checked) {
-    localStorage.setItem('garmin_email', document.getElementById('garmin-email').value.trim());
-  } else {
-    localStorage.removeItem('garmin_email');
+// ─── RENDER DETAIL ───
+function renderDetail(act, streams) {
+  const hr = streams.heartrate?.data || [];
+  const vel = streams.velocity_smooth?.data || [];
+  const alt = streams.altitude?.data || [];
+  const time = streams.time?.data || [];
+  const cad = streams.cadence?.data || [];
+  const dist = streams.distance?.data || [];
+  const grade = streams.grade_smooth?.data || [];
+
+  const maxHR = hr.length ? Math.max(...hr) : 0;
+  const minHR = hr.length ? Math.min(...hr) : 0;
+  const avgHR = hr.length ? Math.round(avg(hr)) : 0;
+  const maxVel = vel.length ? Math.max(...vel) : 0;
+  const elevGain = alt.length ? Math.round(alt.reduce((g,v,i) => i>0 && v>alt[i-1] ? g+(v-alt[i-1]) : g, 0)) : 0;
+  const avgCad = cad.length ? Math.round(avg(cad.filter(v=>v>0))*2) : 0;
+
+  const startTime = fmtClock(act.start_date_local);
+  const endTime   = fmtClockEnd(act.start_date_local, act.elapsed_time || act.moving_time);
+
+  const workoutTypes = { 0:'Run', 1:'Race', 2:'Long run', 3:'Workout', 11:'Run' };
+  const wtype = workoutTypes[act.workout_type] || 'Run';
+
+  const zones = calcZones(hr, time);
+  const spikes = detectSpikes(hr, vel, alt, time, dist, grade);
+  const splits = buildSplitsTable(hr, vel, alt, dist, time);
+
+  const detail = document.getElementById('detail');
+  detail.innerHTML = `
+    <div class="detail">
+      <div class="detail-header">
+        <div class="detail-title">${act.name}<span class="type-badge">${wtype}</span></div>
+        <div class="detail-meta">${fmtDate(act.start_date_local)} · ${act.location_city || ''}</div>
+      </div>
+
+      <div class="metrics-grid">
+        <div class="metric"><div class="metric-val">${fmtDist(act.distance)}</div><div class="metric-lbl">Distance</div></div>
+        <div class="metric"><div class="metric-val">${fmtTime(act.moving_time)}</div><div class="metric-lbl">Moving time</div></div>
+        <div class="metric highlight"><div class="metric-val">${fmtPace(act.average_speed)}</div><div class="metric-lbl">Avg pace /km</div></div>
+        <div class="metric"><div class="metric-val">${startTime}</div><div class="metric-lbl">Start time</div></div>
+        <div class="metric"><div class="metric-val">${endTime}</div><div class="metric-lbl">End time</div></div>
+        <div class="metric"><div class="metric-val">${avgHR || '--'}</div><div class="metric-lbl">Avg HR</div></div>
+        <div class="metric"><div class="metric-val">${maxHR || '--'}</div><div class="metric-lbl">Max HR</div></div>
+        <div class="metric"><div class="metric-val">${elevGain}m</div><div class="metric-lbl">Elev gain</div></div>
+        ${act.suffer_score ? `<div class="metric"><div class="metric-val">${act.suffer_score}</div><div class="metric-lbl">Suffer score</div></div>` : ''}
+        ${avgCad ? `<div class="metric"><div class="metric-val">${avgCad}</div><div class="metric-lbl">Avg cadence</div></div>` : ''}
+      </div>
+
+      ${hr.length || vel.length ? `
+      <div class="section">
+        <div class="section-head">Stream data</div>
+        <div class="chart-tabs" id="chart-tabs">
+          ${hr.length && vel.length ? `<button class="chart-tab active" onclick="switchTab('hr_pace',this)">HR + Pace</button>` : ''}
+          ${hr.length && alt.length ? `<button class="chart-tab" onclick="switchTab('hr_elev',this)">HR + Elevation</button>` : ''}
+          ${vel.length && alt.length ? `<button class="chart-tab" onclick="switchTab('pace_elev',this)">Pace + Elevation</button>` : ''}
+          ${cad.length ? `<button class="chart-tab" onclick="switchTab('cadence',this)">Cadence</button>` : ''}
+          ${grade.length ? `<button class="chart-tab" onclick="switchTab('grade',this)">Grade</button>` : ''}
+        </div>
+        <div class="chart-box">
+          <div class="chart-legend" id="chart-legend"></div>
+          <div class="chart-wrap"><canvas id="main-chart"></canvas></div>
+        </div>
+      </div>` : ''}
+
+      <div class="section map-section" id="map-section" style="display:none;">
+        <div class="section-head">Route map</div>
+        <div class="map-mode-tabs">
+          <button class="map-tab active" onclick="setMapMode('hr',this)">Colour by HR</button>
+          <button class="map-tab" onclick="setMapMode('pace',this)">Colour by Pace</button>
+          <button class="map-tab" onclick="setMapMode('grade',this)">Colour by Grade</button>
+        </div>
+        <div id="run-map"></div>
+        <div class="map-color-legend">
+          <span id="map-legend-low">Low</span>
+          <div class="map-color-bar"></div>
+          <span id="map-legend-high">High</span>
+        </div>
+        <div class="map-color-labels">
+          <span id="map-label-low"></span>
+          <span id="map-label-high"></span>
+        </div>
+      </div>
+
+      ${zones.length ? `
+      <div class="section">
+        <div class="section-head">Heart rate zones</div>
+        ${zones.map(z => `
+          <div class="zone-row">
+            <span class="zone-name">${z.name}</span>
+            <div class="zone-track"><div class="zone-fill" style="width:${z.pct}%;background:${z.color};"></div></div>
+            <span class="zone-pct">${z.pct}%</span>
+            <span class="zone-time">${fmtTime(z.secs)}</span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${spikes.length ? `
+      <div class="section">
+        <div class="section-head">Notable moments</div>
+        <div class="spike-grid">
+          ${spikes.map(s => `
+            <div class="spike-row">
+              <div class="spike-icon" style="background:${s.bgColor};">${s.icon}</div>
+              <div class="spike-body">
+                <div class="spike-title">${s.title}</div>
+                <div class="spike-detail">${s.detail}</div>
+              </div>
+              <div class="spike-km">${s.at}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+
+      ${splits.length ? `
+      <div class="section">
+        <div class="section-head">Per-km splits</div>
+        <div class="chart-box" style="padding:0; overflow:hidden;">
+          <table class="splits-table">
+            <thead><tr>
+              <th>KM</th><th>Pace</th><th>HR</th><th>Elev</th><th>Cadence</th>
+            </tr></thead>
+            <tbody>
+              ${splits.map(s => `<tr>
+                <td>${s.km}</td>
+                <td class="${s.paceClass}">${s.pace}</td>
+                <td class="${s.hrClass}">${s.hr}</td>
+                <td>${s.elev}</td>
+                <td>${s.cad}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>` : ''}
+
+      <div class="section">
+        <div class="section-head">Session notes</div>
+        <div class="effort-wrap">
+          <div class="effort-row">
+            <span class="effort-lbl">Perceived effort</span>
+            <select class="effort-select" id="effort-rating">
+              <option value="">--</option>
+              ${[1,2,3,4,5,6,7,8,9,10].map(n=>`<option value="${n}">${n}</option>`).join('')}
+            </select>
+            <span class="effort-hint">/ 10</span>
+          </div>
+          <div class="effort-row">
+            <span class="effort-lbl">How I felt</span>
+            <input type="text" class="effort-input" id="effort-notes" placeholder="e.g. legs felt heavy, strong finish…" maxlength="300">
+          </div>
+        </div>
+      </div>
+
+      <div class="section" id="garmin-section"></div>
+
+    </div>
+  `;
+
+  buildChart('hr_pace', streams, time, dist);
+  initMap(streams);
+  renderGarminSection();
+}
+
+// ─── CHART ───
+let activeTab = 'hr_pace';
+
+function switchTab(mode, btn) {
+  document.querySelectorAll('.chart-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeTab = mode;
+  if (currentChart) { currentChart.destroy(); currentChart = null; }
+  buildChart(mode, streamData, streamData.time?.data || [], streamData.distance?.data || []);
+}
+
+function buildChart(mode, streams, timeArr, distArr) {
+  const hr = streams.heartrate?.data || [];
+  const vel = streams.velocity_smooth?.data || [];
+  const alt = streams.altitude?.data || [];
+  const cad = streams.cadence?.data || [];
+  const grade = streams.grade_smooth?.data || [];
+
+  const N = timeArr.length;
+  if (!N) return;
+
+  const step = Math.max(1, Math.floor(N / 400));
+  const labels = [], d1 = [], d2 = [];
+
+  for (let i = 0; i < N; i += step) {
+    labels.push(distArr[i] ? (distArr[i]/1000).toFixed(2) : (timeArr[i]/60).toFixed(1));
+    if (mode === 'hr_pace') {
+      d1.push(hr[i] || null);
+      d2.push(vel[i] > 0 ? parseFloat((1000/vel[i]/60).toFixed(3)) : null);
+    } else if (mode === 'hr_elev') {
+      d1.push(hr[i] || null);
+      d2.push(alt[i] ?? null);
+    } else if (mode === 'pace_elev') {
+      d1.push(vel[i] > 0 ? parseFloat((1000/vel[i]/60).toFixed(3)) : null);
+      d2.push(alt[i] ?? null);
+    } else if (mode === 'cadence') {
+      d1.push(cad[i] ? cad[i]*2 : null);
+      d2.push(hr[i] || null);
+    } else if (mode === 'grade') {
+      d1.push(grade[i] ?? null);
+      d2.push(hr[i] || null);
+    }
   }
-}
 
-function toggleMFA() {
-  const row = document.getElementById('mfa-row');
-  const toggle = document.getElementById('mfa-toggle');
-  if (row.style.display === 'none') {
-    row.style.display = 'block';
-    toggle.textContent = 'Hide 2FA';
-  } else {
-    row.style.display = 'none';
-    toggle.textContent = 'Have 2FA?';
-  }
-}
+  const cfgs = {
+    hr_pace:   { l1:'Heart rate', l2:'Pace', c1:'#f87171', c2:'#60a5fa', y2rev:true, u1:'bpm', u2:'min/km' },
+    hr_elev:   { l1:'Heart rate', l2:'Elevation', c1:'#f87171', c2:'#4ade80', c2fill:true, u1:'bpm', u2:'m' },
+    pace_elev: { l1:'Pace', l2:'Elevation', c1:'#60a5fa', c2:'#4ade80', y1rev:true, c2fill:true, u1:'min/km', u2:'m' },
+    cadence:   { l1:'Cadence (spm)', l2:'Heart rate', c1:'#c084fc', c2:'#f87171', u1:'spm', u2:'bpm' },
+    grade:     { l1:'Grade %', l2:'Heart rate', c1:'#fbbf24', c2:'#f87171', u1:'%', u2:'bpm' }
+  };
 
-// ─── Generate report ──────────────────────────────────────────────────────────
-function updateGenerateBtn() {
-  document.getElementById('btn-generate').disabled = !(state.stravaToken && state.garminReady);
-}
+  const cfg = cfgs[mode] || cfgs.hr_pace;
 
-async function generateReport() {
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Fetching data…';
-  setMsg('Connecting to Strava and Garmin Connect…', '');
+  const legend = document.getElementById('chart-legend');
+  if (legend) legend.innerHTML = `
+    <div class="legend-item"><div class="legend-dot" style="background:${cfg.c1}"></div>${cfg.l1}</div>
+    <div class="legend-item"><div class="legend-dot" style="background:${cfg.c2}"></div>${cfg.l2}</div>
+  `;
 
-  const [stravaResult, garminResult] = await Promise.allSettled([
-    fetchStrava(),
-    fetchGarmin(),
-  ]);
+  const canvas = document.getElementById('main-chart');
+  if (!canvas) return;
 
-  const stravaRes = stravaResult.status === 'fulfilled'
-    ? stravaResult.value
-    : { error: stravaResult.reason?.message || 'Unknown Strava error' };
-
-  const garminRes = garminResult.status === 'fulfilled'
-    ? garminResult.value
-    : { error: garminResult.reason?.message || 'Unknown Garmin error' };
-
-  // Update stored Strava token if refreshed
-  if (stravaRes?.new_token?.access_token) {
-    const nt = stravaRes.new_token;
-    state.stravaToken = nt.access_token;
-    state.stravaRefresh = nt.refresh_token;
-    state.stravaExpiry = nt.expires_at;
-    localStorage.setItem('strava_access_token', nt.access_token);
-    localStorage.setItem('strava_refresh_token', nt.refresh_token);
-    localStorage.setItem('strava_expires_at', String(nt.expires_at));
-  }
-
-  const bothFailed = stravaRes?.error && garminRes?.error;
-  if (bothFailed) {
-    setMsg(`Strava: ${stravaRes.error} | Garmin: ${garminRes.error}`, 'err');
-  } else {
-    const report = buildReport(stravaRes, garminRes);
-    showReport(report);
-    const warnings = [
-      stravaRes?.error ? `Strava error: ${stravaRes.error}` : null,
-      garminRes?.error ? `Garmin error: ${garminRes.error}` : null,
-    ].filter(Boolean);
-    setMsg(warnings.length ? warnings.join(' | ') : 'Report generated.', warnings.length ? 'err' : 'ok');
-  }
-
-  btn.disabled = false;
-  btn.innerHTML = 'Generate Report';
-  updateGenerateBtn();
-}
-
-async function safeFetch(url, options, label) {
-  const r = await fetch(url, options);
-  const text = await r.text();
-  if (!text) throw new Error(`${label} function returned an empty response (HTTP ${r.status}) — it likely timed out`);
-  let d;
-  try { d = JSON.parse(text); } catch {
-    throw new Error(`${label} returned non-JSON (HTTP ${r.status}): ${text.slice(0, 120)}`);
-  }
-  if (!r.ok) throw new Error(`${label}: ${d.error || r.statusText}`);
-  return d;
-}
-
-async function fetchStrava() {
-  return safeFetch(
-    '/.netlify/functions/strava-data',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        access_token: state.stravaToken,
-        refresh_token: state.stravaRefresh,
-        expires_at: state.stravaExpiry,
-      }),
+  currentChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: cfg.l1, data: d1, borderColor: cfg.c1, backgroundColor: cfg.c1 + '20', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y1', fill: true, tension: 0.3, spanGaps: true },
+        { label: cfg.l2, data: d2, borderColor: cfg.c2, backgroundColor: cfg.c2fill ? cfg.c2 + '30' : 'transparent', borderWidth: 1.5, pointRadius: 0, yAxisID: 'y2', fill: !!cfg.c2fill, tension: 0.3, spanGaps: true }
+      ]
     },
-    'Strava'
-  );
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      onHover: (evt, elements) => {
+        if (elements && elements.length > 0) syncMapToChartIndex(elements[0].index);
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2021', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+          titleColor: '#888580', bodyColor: '#f0ede8',
+          callbacks: {
+            title: ctx => `${ctx[0].label} km`,
+            label: ctx => {
+              const v = ctx.parsed.y; if (v == null) return null;
+              const isY1 = ctx.datasetIndex === 0;
+              const unit = isY1 ? cfg.u1 : cfg.u2;
+              const isRevPace = (isY1 && cfg.y1rev) || (!isY1 && cfg.y2rev);
+              if (isRevPace && unit === 'min/km') {
+                const min = Math.floor(v); const sec = Math.round((v-min)*60);
+                return ` ${ctx.dataset.label}: ${min}:${String(sec).padStart(2,'0')} /km`;
+              }
+              return ` ${ctx.dataset.label}: ${v.toFixed(1)} ${unit}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { maxTicksLimit: 10, color: '#444240', font: { size: 10, family: "'DM Mono', monospace" } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        y1: { position: 'left', reverse: !!cfg.y1rev, ticks: { color: cfg.c1, font: { size: 10, family: "'DM Mono', monospace" } }, grid: { color: 'rgba(255,255,255,0.06)' } },
+        y2: { position: 'right', reverse: !!cfg.y2rev, ticks: { color: cfg.c2, font: { size: 10, family: "'DM Mono', monospace" } }, grid: { display: false } }
+      }
+    }
+  });
 }
 
-async function fetchGarmin() {
-  const email = document.getElementById('garmin-email').value.trim();
-  const password = document.getElementById('garmin-password').value;
-  const mfa_code = document.getElementById('garmin-mfa').value.trim() || undefined;
+// ─── MAP ───
+let leafletMap = null;
+let mapMarker = null;
+let mapPolylines = [];
+let mapMode = 'hr';
+let mapStreamData = null;
 
-  if (document.getElementById('garmin-remember').checked) {
-    localStorage.setItem('garmin_email', email);
+function setMapMode(mode, btn) {
+  document.querySelectorAll('.map-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  mapMode = mode;
+  if (mapStreamData) drawRoute(mapStreamData);
+}
+
+function hrColor(hr) {
+  const pct = Math.min(1, Math.max(0, (hr - 120) / 80));
+  if (pct < 0.25) return interpolateColor('#4ade80', '#a3e635', pct / 0.25);
+  if (pct < 0.5)  return interpolateColor('#a3e635', '#fbbf24', (pct - 0.25) / 0.25);
+  if (pct < 0.75) return interpolateColor('#fbbf24', '#f97316', (pct - 0.5) / 0.25);
+  return interpolateColor('#f97316', '#f87171', (pct - 0.75) / 0.25);
+}
+
+function paceColor(vel) {
+  const pct = Math.min(1, Math.max(0, (vel - 2.0) / 3.5));
+  if (pct < 0.5) return interpolateColor('#f87171', '#fbbf24', pct / 0.5);
+  return interpolateColor('#fbbf24', '#4ade80', (pct - 0.5) / 0.5);
+}
+
+function gradeColor(g) {
+  const clamped = Math.min(10, Math.max(-10, g));
+  if (clamped < 0) return interpolateColor('#60a5fa', '#4ade80', (clamped + 10) / 10);
+  return interpolateColor('#4ade80', '#f87171', clamped / 10);
+}
+
+function interpolateColor(c1, c2, t) {
+  const r1 = parseInt(c1.slice(1,3),16), g1 = parseInt(c1.slice(3,5),16), b1 = parseInt(c1.slice(5,7),16);
+  const r2 = parseInt(c2.slice(1,3),16), g2 = parseInt(c2.slice(3,5),16), b2 = parseInt(c2.slice(5,7),16);
+  const r = Math.round(r1 + (r2-r1)*t), g = Math.round(g1 + (g2-g1)*t), b = Math.round(b1 + (b2-b1)*t);
+  return `rgb(${r},${g},${b})`;
+}
+
+function initMap(streams) {
+  const latlng = streams.latlng?.data;
+  if (!latlng || latlng.length < 2) {
+    document.getElementById('map-section').style.display = 'none';
+    return;
+  }
+  document.getElementById('map-section').style.display = 'block';
+  mapStreamData = streams;
+
+  if (leafletMap) { leafletMap.remove(); leafletMap = null; mapMarker = null; mapPolylines = []; }
+
+  setTimeout(() => {
+    const center = latlng[Math.floor(latlng.length / 2)];
+    leafletMap = L.map('run-map', { zoomControl: true, attributionControl: false }).setView(center, 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(leafletMap);
+    drawRoute(streams);
+
+    const icon = L.divIcon({
+      className: '',
+      html: '<div style="width:12px;height:12px;border-radius:50%;background:#FC4C02;border:2px solid white;box-shadow:0 0 6px rgba(0,0,0,0.5);margin:-6px 0 0 -6px;"></div>',
+      iconSize: [0,0]
+    });
+    mapMarker = L.marker(center, { icon, interactive: false }).addTo(leafletMap);
+    mapMarker.setOpacity(0);
+  }, 50);
+}
+
+function drawRoute(streams) {
+  if (!leafletMap) return;
+  const latlng = streams.latlng?.data || [];
+  const hr     = streams.heartrate?.data || [];
+  const vel    = streams.velocity_smooth?.data || [];
+  const grade  = streams.grade_smooth?.data || [];
+  const dist   = streams.distance?.data || [];
+  const time   = streams.time?.data || [];
+  const cad    = streams.cadence?.data || [];
+
+  mapPolylines.forEach(p => leafletMap.removeLayer(p));
+  mapPolylines = [];
+
+  const step = Math.max(1, Math.floor(latlng.length / 600));
+  for (let i = 0; i < latlng.length - step; i += step) {
+    const pts = [latlng[i], latlng[i + step]];
+    let color = '#FC4C02';
+    if (mapMode === 'hr')    color = hr[i]    ? hrColor(hr[i])      : '#666';
+    if (mapMode === 'pace')  color = vel[i]   ? paceColor(vel[i])   : '#666';
+    if (mapMode === 'grade') color = grade[i] !== undefined ? gradeColor(grade[i]) : '#666';
+
+    const pl = L.polyline(pts, { color, weight: 4, opacity: 0.9, lineJoin: 'round' });
+
+    pl.on('mouseover', (e) => {
+      const idx = i;
+      const hrVal   = hr[idx]    ? Math.round(hr[idx]) + ' bpm' : '--';
+      const paceVal = vel[idx] > 0 ? fmtPace(vel[idx]) + ' /km' : '--';
+      const gradeVal = grade[idx] !== undefined ? grade[idx].toFixed(1) + '%' : '--';
+      const distVal = dist[idx] ? (dist[idx]/1000).toFixed(2) + ' km' : '--';
+      const cadVal  = cad[idx] ? (cad[idx]*2) + ' spm' : '--';
+
+      pl.bindTooltip(
+        `<div class="map-tooltip"><strong>${distVal}</strong><br>HR: ${hrVal}<br>Pace: ${paceVal}<br>Grade: ${gradeVal}<br>Cadence: ${cadVal}</div>`,
+        { permanent: false, sticky: true, className: 'map-tooltip-wrap', offset: [10, 0] }
+      ).openTooltip();
+
+      if (mapMarker) { mapMarker.setLatLng(latlng[idx]); mapMarker.setOpacity(1); }
+      syncChartToIndex(idx);
+    });
+
+    pl.on('mouseout', () => { if (mapMarker) mapMarker.setOpacity(0); });
+    pl.addTo(leafletMap);
+    mapPolylines.push(pl);
   }
 
-  return safeFetch(
-    '/.netlify/functions/garmin-data',
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, mfa_code }),
-    },
-    'Garmin'
-  );
+  const startIcon = L.divIcon({ className: '', html: '<div style="background:#4ade80;color:#052e16;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;font-family:DM Mono,monospace;">START</div>', iconSize: [0,0] });
+  const endIcon   = L.divIcon({ className: '', html: '<div style="background:#f87171;color:#450a0a;font-size:9px;font-weight:700;padding:2px 5px;border-radius:4px;white-space:nowrap;font-family:DM Mono,monospace;">END</div>', iconSize: [0,0] });
+  L.marker(latlng[0], { icon: startIcon, interactive: false }).addTo(leafletMap);
+  L.marker(latlng[latlng.length-1], { icon: endIcon, interactive: false }).addTo(leafletMap);
+
+  leafletMap.fitBounds(L.polyline(latlng).getBounds(), { padding: [20, 20] });
+
+  const legends = {
+    hr:    { low: 'Low HR', high: 'High HR', labelLow: '~120bpm', labelHigh: '~200bpm' },
+    pace:  { low: 'Slow',   high: 'Fast',    labelLow: '6:40/km', labelHigh: '3:20/km' },
+    grade: { low: 'Downhill', high: 'Uphill', labelLow: '-10%', labelHigh: '+10%' }
+  };
+  const leg = legends[mapMode] || legends.hr;
+  document.getElementById('map-legend-low').textContent  = leg.low;
+  document.getElementById('map-legend-high').textContent = leg.high;
+  document.getElementById('map-label-low').textContent   = leg.labelLow;
+  document.getElementById('map-label-high').textContent  = leg.labelHigh;
 }
 
-// ─── Report formatting ────────────────────────────────────────────────────────
-function buildReport(strava, garmin) {
-  const now = new Date();
-  const dateFull = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const W = 68;
-  const hr = '═'.repeat(W);
-  const thinHr = '─'.repeat(W);
+function syncChartToIndex(rawIdx) {
+  if (!currentChart) return;
+  const streams = streamData;
+  if (!streams) return;
+  const dist = streams.distance?.data || [];
+  const N = dist.length;
+  const step = Math.max(1, Math.floor(N / 400));
+  const chartIdx = Math.round(rawIdx / step);
+  const meta = currentChart.getDatasetMeta(0);
+  if (!meta || !meta.data || chartIdx >= meta.data.length) return;
+  currentChart.tooltip.setActiveElements(
+    [{ datasetIndex: 0, index: chartIdx }, { datasetIndex: 1, index: chartIdx }],
+    { x: 0, y: 0 }
+  );
+  currentChart.update('none');
+}
 
-  const lines = [
-    hr,
-    center(`FITNESS REPORT — ${dateFull}`, W),
-    hr,
-    '',
+function syncMapToChartIndex(chartIdx) {
+  if (!leafletMap || !mapMarker || !streamData) return;
+  const latlng = streamData.latlng?.data;
+  const dist   = streamData.distance?.data || [];
+  if (!latlng) return;
+  const N = dist.length;
+  const step = Math.max(1, Math.floor(N / 400));
+  const rawIdx = Math.min(latlng.length - 1, chartIdx * step);
+  if (latlng[rawIdx]) { mapMarker.setLatLng(latlng[rawIdx]); mapMarker.setOpacity(1); }
+}
+
+// ─── ZONES ───
+function calcZones(hrData, timeData) {
+  if (!hrData.length) return [];
+  const maxHR = 200;
+  const zones = [
+    { name: 'Z1 ·50-60%', min: 0,    max: 0.60, color: '#1d9e75', secs: 0 },
+    { name: 'Z2 ·60-70%', min: 0.60, max: 0.70, color: '#4ade80', secs: 0 },
+    { name: 'Z3 ·70-80%', min: 0.70, max: 0.80, color: '#fbbf24', secs: 0 },
+    { name: 'Z4 ·80-90%', min: 0.80, max: 0.90, color: '#f97316', secs: 0 },
+    { name: 'Z5 ·90%+',   min: 0.90, max: 1.00, color: '#f87171', secs: 0 }
   ];
-
-  lines.push(...formatGarminSection(garmin, thinHr));
-  lines.push('');
-  lines.push(...formatStravaSection(strava, thinHr));
-  lines.push('');
-  lines.push(hr);
-  lines.push(center(`Report generated ${dateFull} at ${timeStr}`, W));
-  lines.push(hr);
-
-  return lines.join('\n');
+  hrData.forEach((h, i) => {
+    const pct = h / maxHR;
+    const dt = i > 0 ? timeData[i] - timeData[i-1] : 1;
+    for (let z = zones.length-1; z >= 0; z--) {
+      if (pct >= zones[z].min) { zones[z].secs += dt; break; }
+    }
+  });
+  const total = zones.reduce((s,z) => s+z.secs, 0) || 1;
+  return zones.map(z => ({ ...z, pct: Math.round(z.secs/total*100) })).filter(z => z.pct > 0);
 }
 
-function formatGarminSection(g, thinHr) {
-  const L = [];
-  L.push(thinHr);
-  L.push('GARMIN CONNECT — DAILY WELLNESS');
-  L.push(thinHr);
+// ─── SPIKES ───
+function detectSpikes(hrData, velData, altData, timeData, distData, gradeData) {
+  const spikes = [];
+  if (!hrData.length && !velData.length) return spikes;
 
-  if (g?.error) {
-    L.push(`  ✗ Error: ${g.error}`);
-    return L;
-  }
+  const avgHR  = avg(hrData);
+  const avgVel = avg(velData.filter(v=>v>0));
 
-  // ── Sleep ──
-  L.push('');
-  L.push('SLEEP');
-  const sl = g?.sleep?.dailySleepDTO ?? g?.sleep;
-  if (sl) {
-    const score = sl?.sleepScores?.overall?.value ?? sl?.sleepScore ?? '—';
-    const qual  = sl?.sleepScores?.overall?.qualifierKey ?? '';
-    L.push(`  Score:           ${score}${qual ? ' / 100  (' + titleCase(qual) + ')' : '/100'}`);
-    L.push(`  Total Duration:  ${fmtHMS(sl?.sleepTimeSeconds)}`);
-    L.push(`  Deep Sleep:      ${fmtHMS(sl?.deepSleepSeconds)}`);
-    L.push(`  Light Sleep:     ${fmtHMS(sl?.lightSleepSeconds)}`);
-    L.push(`  REM Sleep:       ${fmtHMS(sl?.remSleepSeconds)}`);
-    L.push(`  Awake:           ${fmtHMS(sl?.awakeSleepSeconds)}`);
-    if (sl?.averageSpO2Value != null) L.push(`  Avg SpO₂:        ${sl.averageSpO2Value.toFixed(1)}%`);
-    if (sl?.averageRespirationValue != null) L.push(`  Avg Respiration: ${sl.averageRespirationValue.toFixed(1)} brpm`);
-  } else {
-    L.push('  No sleep data available');
-  }
-
-  // ── HRV ──
-  L.push('');
-  L.push('HEART RATE VARIABILITY (HRV)');
-  const hrv = g?.hrv?.hrvSummary ?? g?.hrv;
-  if (hrv) {
-    const status = hrv?.status ?? hrv?.lastNightStatus ?? '—';
-    L.push(`  Status:          ${titleCase(String(status).replace(/_/g,' '))}`);
-    if (hrv?.lastNight != null) L.push(`  Last Night:      ${hrv.lastNight} ms (RMSSD)`);
-    if (hrv?.weeklyAvg != null) L.push(`  5-Night Average: ${hrv.weeklyAvg} ms`);
-    if (hrv?.lastNight5MinHigh != null) L.push(`  Night-time High: ${hrv.lastNight5MinHigh} ms`);
-    const bl = hrv?.baseline;
-    if (bl) {
-      L.push(`  Baseline Range:  ${bl.balancedLow ?? '—'}–${bl.balancedUpper ?? '—'} ms`);
-    }
-  } else {
-    L.push('  No HRV data available');
-  }
-
-  // ── Resting HR ──
-  L.push('');
-  L.push('RESTING HEART RATE');
-  const rhr = g?.rhr;
-  const rhrVal = rhr?.allMetrics?.metricsMap?.WELLNESS_RESTING_HEART_RATE?.[0]?.value
-    ?? rhr?.restingHeartRate
-    ?? rhr?.value
-    ?? null;
-  L.push(`  Resting HR:      ${rhrVal != null ? rhrVal + ' bpm' : 'No data'}`);
-
-  // ── Body Battery ──
-  L.push('');
-  L.push('BODY BATTERY');
-  const bb = Array.isArray(g?.body_battery) ? g.body_battery[0] : g?.body_battery;
-  if (bb) {
-    if (bb?.charged != null) L.push(`  Charged:         ${bb.charged}/100`);
-    if (bb?.drained != null) L.push(`  Drained:         ${bb.drained}`);
-    const vals = bb?.bodyBatteryValuesArray ?? bb?.bodyBatteryValueDescriptorDTOList;
-    if (vals?.length) {
-      const latest = vals[vals.length - 1];
-      const bbVal = Array.isArray(latest) ? latest[1] : (latest?.bodyBatteryLevel ?? latest?.value);
-      if (bbVal != null) L.push(`  Current Level:   ${bbVal}/100`);
-    }
-  } else {
-    L.push('  No Body Battery data available');
-  }
-
-  // ── Stress ──
-  L.push('');
-  L.push('STRESS');
-  const stress = g?.stress;
-  if (stress) {
-    const avg = stress?.overallStressLevel ?? stress?.avgStressLevel ?? stress?.averageStressLevel;
-    const max = stress?.maxStressLevel;
-    const rest = stress?.restStressDuration;
-    if (avg != null) L.push(`  Average:         ${avg}${stressLabel(avg)}`);
-    if (max != null) L.push(`  Peak:            ${max}`);
-    if (rest != null) L.push(`  Rest Duration:   ${fmtHMS(rest)}`);
-  } else {
-    L.push('  No stress data available');
-  }
-
-  // ── VO2max + Training Status ──
-  L.push('');
-  L.push('PERFORMANCE METRICS');
-  const mm = g?.max_metrics;
-  const vo2 = mm?.generic?.VO2MaxValue ?? mm?.[0]?.generic?.VO2MaxValue ?? null;
-  const fitnessLvl = mm?.generic?.fitnessLevel ?? mm?.[0]?.generic?.fitnessLevel ?? null;
-  L.push(`  VO₂max:          ${vo2 != null ? vo2.toFixed(1) + ' mL/kg/min' + (fitnessLvl ? '  (' + titleCase(fitnessLvl) + ')' : '') : 'No data'}`);
-
-  const ts = g?.training_status?.mostRecentTrainingStatus ?? g?.training_status;
-  if (ts) {
-    const tsType = ts?.trainingStatusType ?? ts?.status ?? '—';
-    L.push(`  Training Status: ${titleCase(String(tsType).replace(/_/g,' '))}`);
-    const tl = ts?.trainingLoadData?.currentTrainingLoad ?? ts?.trainingLoad?.currentTrainingLoad;
-    if (tl != null) L.push(`  Training Load:   ${Math.round(tl)}`);
-  }
-
-  // Recovery time from training readiness
-  const tr = g?.training_readiness?.trainingReadiness ?? g?.training_readiness;
-  if (tr) {
-    if (tr?.score != null) L.push(`  Readiness Score: ${tr.score}/100`);
-    const recHrs = tr?.recoveryTime ?? tr?.recoveryTimeSeconds != null ? Math.round((tr?.recoveryTimeSeconds ?? 0) / 3600) : null;
-    const recFinal = tr?.recoveryTime ?? recHrs;
-    if (recFinal != null) L.push(`  Recovery Time:   ${recFinal} hours remaining`);
-  }
-
-  // ── Lactate Threshold ──
-  L.push('');
-  L.push('LACTATE THRESHOLD');
-  const lt = g?.lactate_threshold;
-  if (lt && !g?.lactate_threshold_error) {
-    const ltHR = lt?.lactateThresholdHeartRate ?? lt?.heartRate ?? lt?.hrBpm ?? null;
-    const ltPace = lt?.pacePer1000mInSeconds ?? lt?.paceInSeconds ?? null;
-    const ltSpeed = lt?.maxSpeedInMetersPerSecond ?? null;
-    L.push(`  Heart Rate:      ${ltHR != null ? ltHR + ' bpm' : '—'}`);
-    if (ltPace != null) {
-      const min = Math.floor(ltPace / 60), sec = Math.round(ltPace % 60);
-      L.push(`  Pace:            ${min}:${String(sec).padStart(2,'0')} /km`);
-    } else if (ltSpeed != null && ltSpeed > 0) {
-      const sPerKm = 1000 / ltSpeed;
-      const min = Math.floor(sPerKm / 60), sec = Math.round(sPerKm % 60);
-      L.push(`  Pace:            ${min}:${String(sec).padStart(2,'0')} /km`);
-    }
-  } else {
-    L.push('  No lactate threshold data available');
-  }
-
-  // ── Race Predictions ──
-  L.push('');
-  L.push('RACE PREDICTIONS');
-  const rp = g?.race_predictions;
-  if (Array.isArray(rp) && rp.length) {
-    const distMap = {
-      DISTANCE_1MILE: '1 Mile', MILES_1: '1 Mile',
-      DISTANCE_5K: '5K', DISTANCE_5000M: '5K',
-      DISTANCE_10K: '10K', DISTANCE_10000M: '10K',
-      DISTANCE_HALF_MARATHON: 'Half Marathon', DISTANCE_21097M: 'Half Marathon',
-      DISTANCE_MARATHON: 'Marathon', DISTANCE_42195M: 'Marathon',
-    };
-    rp.forEach(pred => {
-      const unit = pred?.distancePredictionUnit ?? pred?.racePredictorResult?.distancePredictionUnit ?? '';
-      const secs = pred?.finishTime ?? pred?.racePredictorResult?.finishTime ?? null;
-      if (secs == null) return;
-      const label = distMap[unit] ?? unit.replace(/DISTANCE_/, '').replace(/_/g,' ');
-      L.push(`  ${(label + ':').padEnd(18)} ${fmtRaceTime(secs)}`);
-    });
-  } else {
-    L.push('  No race prediction data available');
-  }
-
-  return L;
-}
-
-function formatStravaSection(s, thinHr) {
-  const L = [];
-  L.push(thinHr);
-  L.push('STRAVA — LATEST RUN');
-  L.push(thinHr);
-
-  if (s?.error) {
-    L.push(`  ✗ Error: ${s.error}`);
-    return L;
-  }
-
-  const a = s?.activity;
-  if (!a) {
-    L.push('  No activity data returned');
-    return L;
-  }
-
-  const startDate = new Date(a.start_date_local || a.start_date);
-  const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  const timeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-  L.push('');
-  L.push(`  Activity:        ${a.name}`);
-  L.push(`  Date:            ${dateStr} at ${timeStr}`);
-  L.push(`  Distance:        ${(a.distance / 1000).toFixed(2)} km  (${(a.distance / 1609.34).toFixed(2)} mi)`);
-  L.push(`  Moving Time:     ${fmtHMS(a.moving_time)}`);
-  if (a.elapsed_time && a.elapsed_time !== a.moving_time) {
-    L.push(`  Elapsed Time:    ${fmtHMS(a.elapsed_time)}`);
-  }
-
-  // Average pace
-  if (a.average_speed && a.average_speed > 0) {
-    const sPerKm = 1000 / a.average_speed;
-    const bsPerKm = 1000 / a.max_speed;
-    L.push(`  Avg Pace:        ${fmtPace(sPerKm)}  /km`);
-    L.push(`  Best Pace:       ${fmtPace(bsPerKm)}  /km`);
-  }
-
-  if (a.average_heartrate) L.push(`  Avg HR:          ${Math.round(a.average_heartrate)} bpm`);
-  if (a.max_heartrate)     L.push(`  Max HR:          ${Math.round(a.max_heartrate)} bpm`);
-  if (a.average_cadence)   L.push(`  Avg Cadence:     ${Math.round(a.average_cadence * 2)} spm`);
-  if (a.average_watts)     L.push(`  Avg Power:       ${Math.round(a.average_watts)} W`);
-  if (a.total_elevation_gain != null) {
-    L.push(`  Elevation:       +${Math.round(a.total_elevation_gain)} m`);
-  }
-  if (a.calories)          L.push(`  Calories:        ${Math.round(a.calories)} kcal`);
-  if (a.suffer_score)      L.push(`  Suffer Score:    ${a.suffer_score}`);
-  if (a.perceived_exertion != null) L.push(`  Perceived Exertion: ${a.perceived_exertion}/10`);
-  if (a.description)       L.push(`  Note:            ${a.description}`);
-
-  // Stream table
-  const intervals = s?.intervals;
-  if (intervals?.length) {
-    L.push('');
-    L.push(`SPLIT DATA — 100m INTERVALS  (${intervals.length} points)`);
-    L.push('');
-
-    // Determine which columns have data
-    const hasPace    = intervals.some(p => p.paceStr);
-    const hasHR      = intervals.some(p => p.hr != null);
-    const hasAlt     = intervals.some(p => p.altitude != null);
-    const hasGrade   = intervals.some(p => p.grade != null);
-    const hasCad     = intervals.some(p => p.cadence != null);
-    const hasStride  = intervals.some(p => p.stride != null);
-    const hasPower   = intervals.some(p => p.power != null);
-
-    const cols = ['Dist'];
-    if (hasPace)   cols.push('Pace');
-    if (hasHR)     cols.push('HR');
-    if (hasAlt)    cols.push('Alt');
-    if (hasGrade)  cols.push('Grade');
-    if (hasCad)    cols.push('Cad');
-    if (hasStride) cols.push('Stride');
-    if (hasPower)  cols.push('Power');
-
-    const widths = {
-      Dist: 7, Pace: 10, HR: 5, Alt: 8, Grade: 7, Cad: 5, Stride: 7, Power: 7
-    };
-
-    const header = cols.map(c => c.padEnd(widths[c])).join(' │ ');
-    const divider = cols.map(c => '─'.repeat(widths[c])).join('─┼─');
-    L.push('  ' + header);
-    L.push('  ' + divider);
-
-    intervals.forEach(p => {
-      const distKm = (p.distance / 1000).toFixed(1);
-      const row = [];
-      row.push((`${distKm} km`).padEnd(widths.Dist));
-      if (hasPace)   row.push((p.paceStr ?? '—').padEnd(widths.Pace));
-      if (hasHR)     row.push((p.hr != null ? String(Math.round(p.hr)) : '—').padEnd(widths.HR));
-      if (hasAlt)    row.push((p.altitude != null ? p.altitude.toFixed(1) + 'm' : '—').padEnd(widths.Alt));
-      if (hasGrade)  row.push((p.grade != null ? (p.grade >= 0 ? '+' : '') + p.grade.toFixed(1) + '%' : '—').padEnd(widths.Grade));
-      if (hasCad)    row.push((p.cadence != null ? String(p.cadence) : '—').padEnd(widths.Cad));
-      if (hasStride) row.push((p.stride != null ? p.stride.toFixed(2) + 'm' : '—').padEnd(widths.Stride));
-      if (hasPower)  row.push((p.power != null ? Math.round(p.power) + 'W' : '—').padEnd(widths.Power));
-      L.push('  ' + row.join(' │ '));
+  if (hrData.length) {
+    const maxHR = Math.max(...hrData);
+    const idx = hrData.lastIndexOf(maxHR);
+    const km = distData[idx] ? (distData[idx]/1000).toFixed(2) : null;
+    spikes.push({
+      icon: '↑', bgColor: 'rgba(248,113,113,0.15)',
+      title: `Peak HR: ${maxHR} bpm`,
+      detail: `${Math.round(maxHR - avgHR)} bpm above average${altData[idx] ? ` · ${Math.round(altData[idx])}m elevation` : ''}`,
+      at: km ? km + 'km' : fmtTime(timeData[idx])
     });
   }
 
-  return L;
+  if (velData.length) {
+    let slowIdx = 0, slowVal = Infinity;
+    velData.forEach((v,i) => { if (v > 0.5 && v < slowVal) { slowVal = v; slowIdx = i; } });
+    if (slowVal < avgVel * 0.75) {
+      const km = distData[slowIdx] ? (distData[slowIdx]/1000).toFixed(2) : null;
+      spikes.push({
+        icon: '↓', bgColor: 'rgba(96,165,250,0.15)',
+        title: `Slowest point: ${fmtPace(slowVal)} /km`,
+        detail: `Avg pace ${fmtPace(avgVel)} · ${Math.round((1-slowVal/avgVel)*100)}% below average${altData[slowIdx] ? ` · ${Math.round(altData[slowIdx])}m elev` : ''}`,
+        at: km ? km + 'km' : fmtTime(timeData[slowIdx])
+      });
+    }
+
+    let fastIdx = 0, fastVal = 0;
+    velData.forEach((v,i) => { if (v > fastVal) { fastVal = v; fastIdx = i; } });
+    if (fastVal > avgVel * 1.15) {
+      const km = distData[fastIdx] ? (distData[fastIdx]/1000).toFixed(2) : null;
+      spikes.push({
+        icon: '⚡', bgColor: 'rgba(74,222,128,0.15)',
+        title: `Fastest point: ${fmtPace(fastVal)} /km`,
+        detail: `${Math.round((fastVal/avgVel-1)*100)}% faster than average`,
+        at: km ? km + 'km' : fmtTime(timeData[fastIdx])
+      });
+    }
+  }
+
+  if (altData.length > 1) {
+    let steepIdx = 1, steepVal = 0;
+    for (let i = 5; i < altData.length - 5; i++) {
+      const gain = altData[i+4] - altData[i-4];
+      if (gain > steepVal) { steepVal = gain; steepIdx = i; }
+    }
+    if (steepVal > 5) {
+      const km = distData[steepIdx] ? (distData[steepIdx]/1000).toFixed(2) : null;
+      spikes.push({
+        icon: '⛰', bgColor: 'rgba(251,191,36,0.15)',
+        title: `Steepest climb: +${steepVal.toFixed(1)}m`,
+        detail: `HR at this point: ${hrData[steepIdx] ? Math.round(hrData[steepIdx]) + ' bpm' : 'N/A'}`,
+        at: km ? km + 'km' : fmtTime(timeData[steepIdx])
+      });
+    }
+  }
+
+  return spikes;
 }
 
-// ─── UI helpers ───────────────────────────────────────────────────────────────
-function showReport(text) {
-  document.getElementById('report-section').style.display = 'block';
-  document.getElementById('report-output').textContent = text;
-  document.getElementById('report-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  document.getElementById('btn-copy').textContent = 'Copy to clipboard';
-  document.getElementById('btn-copy').classList.remove('copied');
-  window._reportText = text;
+// ─── SPLITS TABLE ───
+function buildSplitsTable(hrData, velData, altData, distData, timeData) {
+  if (!distData.length) return [];
+  const totalKm = Math.floor(distData[distData.length-1] / 1000);
+  if (totalKm < 1) return [];
+
+  const splits = [];
+  const allPaces = [];
+
+  for (let km = 1; km <= totalKm; km++) {
+    const startM = (km-1) * 1000, endM = km * 1000;
+    const idxs = distData.reduce((acc,d,i) => d >= startM && d < endM ? [...acc,i] : acc, []);
+    if (!idxs.length) continue;
+
+    const segHR  = idxs.map(i => hrData[i]).filter(Boolean);
+    const segVel = idxs.map(i => velData[i]).filter(v => v > 0);
+    const segAlt = idxs.map(i => altData[i]).filter(v => v !== undefined);
+
+    const paceVal  = segVel.length ? avg(segVel) : 0;
+    const hrVal    = segHR.length  ? Math.round(avg(segHR)) : null;
+    const elevDiff = segAlt.length > 1 ? Math.round(segAlt[segAlt.length-1] - segAlt[0]) : null;
+
+    allPaces.push(paceVal);
+    splits.push({ km, paceVal, hrVal, elevDiff });
+  }
+
+  const avgPaceVal = avg(allPaces.filter(v=>v>0));
+
+  return splits.map(s => ({
+    km: s.km,
+    pace: fmtPace(s.paceVal),
+    paceClass: s.paceVal > avgPaceVal * 1.05 ? 'pace-slow' : s.paceVal < avgPaceVal * 0.95 ? 'pace-fast' : '',
+    hr: s.hrVal ? s.hrVal + ' bpm' : '--',
+    hrClass: s.hrVal > 170 ? 'hr-high' : s.hrVal > 155 ? 'hr-med' : '',
+    elev: s.elevDiff !== null ? (s.elevDiff >= 0 ? '+' : '') + s.elevDiff + 'm' : '--',
+    cad: '--'
+  }));
 }
 
-async function copyReport() {
-  const btn = document.getElementById('btn-copy');
+// ─── GARMIN ───
+
+function updateGarminBtn() {
+  const btn = document.getElementById('garmin-btn');
+  if (!btn) return;
+  const creds = getGarminCreds();
+  if (creds) {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/></svg> Garmin Connected`;
+    btn.classList.add('connected');
+    btn.onclick = promptGarminDisconnect;
+  } else {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg> Connect Garmin`;
+    btn.classList.remove('connected');
+    btn.onclick = openGarminModal;
+  }
+}
+
+function openGarminModal() {
+  const overlay = document.getElementById('garmin-modal');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  document.getElementById('garmin-modal-error').textContent = '';
+  const btn = document.getElementById('garmin-connect-btn');
+  btn.disabled = false; btn.textContent = 'Connect';
+  setTimeout(() => document.getElementById('garmin-email').focus(), 100);
+}
+
+function closeGarminModal() {
+  const overlay = document.getElementById('garmin-modal');
+  if (overlay) overlay.classList.remove('open');
+}
+
+function handleModalClick(e) {
+  if (e.target === document.getElementById('garmin-modal')) closeGarminModal();
+}
+
+function promptGarminDisconnect() {
+  if (confirm('Disconnect Garmin account from this device?')) {
+    clearGarminCreds();
+    clearGarminTokens();
+    garminData = null;
+    garminTokenData = null;
+    updateGarminBtn();
+    renderGarminSection();
+  }
+}
+
+async function connectGarmin() {
+  const email    = document.getElementById('garmin-email').value.trim();
+  const password = document.getElementById('garmin-password').value;
+  const errEl    = document.getElementById('garmin-modal-error');
+  const btn      = document.getElementById('garmin-connect-btn');
+
+  if (!email || !password) { errEl.textContent = 'Please enter your email and password.'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  errEl.textContent = '';
+
   try {
-    await navigator.clipboard.writeText(window._reportText || '');
-    btn.textContent = '✓ Copied!';
-    btn.classList.add('copied');
-    setTimeout(() => {
-      btn.textContent = 'Copy to clipboard';
-      btn.classList.remove('copied');
-    }, 2500);
-  } catch {
-    btn.textContent = 'Copy failed — try selecting text manually';
+    const today = new Date();
+    const payload = {
+      email, password,
+      report_date: today.toISOString().split('T')[0],
+      cutoff_ms: today.getTime(),
+    };
+    const resp = await fetch(GARMIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Connection failed';
+      btn.disabled = false; btn.textContent = 'Connect';
+      return;
+    }
+    saveGarminCreds({ email, password });
+    if (data.token_data) { garminTokenData = data.token_data; saveGarminTokens(data.token_data); }
+    closeGarminModal();
+    updateGarminBtn();
+    renderGarminSection();
+  } catch (e) {
+    errEl.textContent = e.name === 'TimeoutError' ? 'Request timed out — try again' : `Error: ${e.message}`;
+    btn.disabled = false; btn.textContent = 'Connect';
   }
 }
 
-function dot(id, cls) {
-  const el = document.getElementById(id);
-  el.className = 'dot' + (cls ? ' ' + cls : '');
+function getBeforeRunMs() {
+  if (!currentActivity) return null;
+  const startDate = new Date(currentActivity.start_date_local);
+  return startDate.getTime() - 5 * 60 * 1000;
 }
 
-function setStatus(id, msg, cls) {
-  const el = document.getElementById(id);
-  el.textContent = msg;
-  el.className = 'status-line' + (cls ? ' ' + cls : '');
+function getBeforeRunDatetimeLocal() {
+  const ms = getBeforeRunMs();
+  if (!ms) return '';
+  const d = new Date(ms);
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function setMsg(msg, cls) {
-  const el = document.getElementById('status-msg');
-  el.textContent = msg;
-  el.className = cls || '';
+function getRunDateStr() {
+  if (!currentActivity) return new Date().toISOString().split('T')[0];
+  return currentActivity.start_date_local.split('T')[0];
 }
 
-// ─── Utility formatters ───────────────────────────────────────────────────────
-function fmtHMS(seconds) {
-  if (seconds == null || seconds === 0) return '—';
-  const s = Math.round(seconds);
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sc = s % 60;
-  if (h > 0) return `${h}h ${String(m).padStart(2,'0')}m ${String(sc).padStart(2,'0')}s`;
-  if (m > 0) return `${m}m ${String(sc).padStart(2,'0')}s`;
-  return `${sc}s`;
+function updateGarminTimeControls() {
+  const sel = document.getElementById('garmin-time-preset');
+  const customInput = document.getElementById('garmin-custom-dt');
+  if (!sel || !customInput) return;
+  customInput.classList.toggle('visible', sel.value === 'custom');
 }
 
-function fmtPace(secPerKm) {
-  if (!secPerKm || secPerKm <= 0) return '—';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.round(secPerKm % 60);
-  return `${m}:${String(s).padStart(2,'0')}`;
+async function doFetchGarminData() {
+  const sel = document.getElementById('garmin-time-preset');
+  const customInput = document.getElementById('garmin-custom-dt');
+  const resultEl = document.getElementById('garmin-result');
+  const fetchBtn = document.getElementById('garmin-fetch-btn');
+  if (!sel || !resultEl || !fetchBtn) return;
+
+  let reportDate, cutoffMs;
+
+  if (sel.value === 'before_run') {
+    cutoffMs = getBeforeRunMs();
+    reportDate = getRunDateStr();
+    if (!cutoffMs) { resultEl.innerHTML = '<div class="error-banner">No activity selected.</div>'; return; }
+  } else if (sel.value === 'run_start') {
+    if (!currentActivity) { resultEl.innerHTML = '<div class="error-banner">No activity selected.</div>'; return; }
+    reportDate = currentActivity.start_date_local.split('T')[0];
+    cutoffMs = new Date(currentActivity.start_date_local).getTime();
+  } else if (sel.value === 'custom') {
+    const dtStr = customInput.value;
+    if (!dtStr) { resultEl.innerHTML = '<div class="error-banner">Please select a date and time.</div>'; return; }
+    const dt = new Date(dtStr);
+    reportDate = dtStr.split('T')[0];
+    cutoffMs = dt.getTime();
+  } else { // now
+    const now = new Date();
+    reportDate = now.toISOString().split('T')[0];
+    cutoffMs = now.getTime();
+  }
+
+  const creds = getGarminCreds();
+  if (!creds) { resultEl.innerHTML = '<div class="error-banner">Garmin not connected.</div>'; return; }
+
+  fetchBtn.disabled = true;
+  fetchBtn.textContent = 'Fetching…';
+  resultEl.innerHTML = '<div class="loading-state"><div class="spinner" style="border-top-color:var(--garmin);"></div> Fetching Garmin health data…</div>';
+
+  const payload = { email: creds.email, password: creds.password, report_date: reportDate, cutoff_ms: cutoffMs };
+  const tokens = garminTokenData || getGarminTokens();
+  if (tokens) payload.token_data = tokens;
+
+  try {
+    const resp = await fetch(GARMIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      resultEl.innerHTML = `<div class="error-banner">${data.error || 'Garmin fetch failed'}</div>`;
+      fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch Garmin Data';
+      return;
+    }
+    if (data.token_data) { garminTokenData = data.token_data; saveGarminTokens(data.token_data); }
+    garminData = data.report_text;
+    resultEl.innerHTML = `<pre class="garmin-report">${escapeHtml(data.report_text)}</pre>`;
+  } catch (e) {
+    const msg = e.name === 'TimeoutError'
+      ? 'Request timed out (>30s). First connection can be slow — try again to use the cached token.'
+      : `Network error: ${e.message}`;
+    resultEl.innerHTML = `<div class="error-banner">${msg}</div>`;
+  }
+
+  fetchBtn.disabled = false;
+  fetchBtn.textContent = garminData ? 'Refresh' : 'Fetch Garmin Data';
 }
 
-function fmtRaceTime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.round(seconds % 60);
-  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  return `${m}:${String(s).padStart(2,'0')}`;
+function renderGarminSection() {
+  const section = document.getElementById('garmin-section');
+  if (!section) return;
+
+  const creds = getGarminCreds();
+
+  if (!creds) {
+    section.innerHTML = `
+      <div class="section-head">Garmin Health</div>
+      <div class="garmin-not-connected">
+        <a href="#" onclick="openGarminModal(); return false;">Connect your Garmin account</a> to pull health data for this session and include it in the clipboard copy.
+      </div>`;
+    return;
+  }
+
+  const beforeDt = getBeforeRunDatetimeLocal();
+  const existingReport = garminData
+    ? `<pre class="garmin-report">${escapeHtml(garminData)}</pre>` : '';
+
+  section.innerHTML = `
+    <div class="section-head">Garmin Health</div>
+    <div class="garmin-fetch-row">
+      <select class="garmin-time-select" id="garmin-time-preset" onchange="updateGarminTimeControls()">
+        <option value="before_run">5 min before run</option>
+        <option value="run_start">At run start</option>
+        <option value="now">Current time</option>
+        <option value="custom">Custom...</option>
+      </select>
+      <input type="datetime-local" class="garmin-custom-dt" id="garmin-custom-dt" value="${beforeDt}">
+      <button class="btn-garmin-fetch" id="garmin-fetch-btn" onclick="doFetchGarminData()">
+        ${garminData ? 'Refresh' : 'Fetch Garmin Data'}
+      </button>
+    </div>
+    <div id="garmin-result">${existingReport}</div>`;
 }
 
-function titleCase(str) {
-  return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+// ─── COPY TO CLIPBOARD ───
+function copyToClipboard() {
+  if (!currentActivity || !streamData) return;
+
+  const startTime    = fmtClock(currentActivity.start_date_local);
+  const endTime      = fmtClockEnd(currentActivity.start_date_local, currentActivity.elapsed_time || currentActivity.moving_time);
+  const effortRating = document.getElementById('effort-rating')?.value || '';
+  const effortNotes  = document.getElementById('effort-notes')?.value?.trim() || '';
+
+  const hr    = streamData.heartrate?.data || [];
+  const vel   = streamData.velocity_smooth?.data || [];
+  const alt   = streamData.altitude?.data || [];
+  const time  = streamData.time?.data || [];
+  const dist  = streamData.distance?.data || [];
+  const grade = streamData.grade_smooth?.data || [];
+  const cad   = streamData.cadence?.data || [];
+  const watts = streamData.watts?.data || [];
+  const temp  = streamData.temp?.data || [];
+  const moving= streamData.moving?.data || [];
+
+  const avgHR  = hr.length  ? Math.round(avg(hr))  : null;
+  const maxHR  = hr.length  ? Math.max(...hr)       : null;
+  const minHR  = hr.length  ? Math.min(...hr)       : null;
+  const avgVel = avg(vel.filter(v => v > 0));
+  const maxVel = vel.length ? Math.max(...vel)      : 0;
+  const elevGain = alt.length ? Math.round(alt.reduce((g,v,i) => i>0 && v>alt[i-1] ? g+(v-alt[i-1]) : g, 0)) : 0;
+  const elevLoss = alt.length ? Math.round(alt.reduce((g,v,i) => i>0 && v<alt[i-1] ? g+(alt[i-1]-v) : g, 0)) : 0;
+  const avgCad   = cad.length   ? Math.round(avg(cad.filter(v=>v>0)) * 2) : null;
+  const avgWatts = watts.length ? Math.round(avg(watts.filter(v=>v>0))) : null;
+  const avgTemp  = temp.length  ? Math.round(avg(temp)) : null;
+
+  const pauses = [];
+
+  if (moving.length > 0) {
+    let inPause = false, pauseStart = -1;
+    for (let i = 0; i < moving.length; i++) {
+      if (!moving[i] && !inPause) { inPause = true; pauseStart = i; }
+      else if (moving[i] && inPause) {
+        inPause = false;
+        const dur = (time[i] || 0) - (time[pauseStart] || 0);
+        if (dur >= 5) pauses.push({ pauseIdx: pauseStart, resumeIdx: i, pauseDist: dist[pauseStart]||0, resumeDist: dist[i]||0, pauseTime: time[pauseStart]||0, resumeTime: time[i]||0, duration: dur });
+      }
+    }
+  }
+
+  const globalAvgVel = avg(vel.filter(v => v > 0)) || 3;
+  for (let i = 1; i < time.length; i++) {
+    const dt = (time[i] || 0) - (time[i-1] || 0);
+    const dd = (dist[i] || 0) - (dist[i-1] || 0);
+    const expectedTime = dd / globalAvgVel;
+    const excessTime = dt - expectedTime;
+    if (excessTime > 20) {
+      const alreadyCaught = pauses.some(p => Math.abs(p.pauseTime - (time[i-1]||0)) < 5);
+      if (!alreadyCaught) {
+        pauses.push({ pauseIdx: i-1, resumeIdx: i, pauseDist: dist[i-1]||0, resumeDist: dist[i]||0, pauseTime: time[i-1]||0, resumeTime: time[i]||0, duration: Math.round(excessTime) });
+      }
+    }
+  }
+
+  pauses.sort((a, b) => a.pauseTime - b.pauseTime);
+  const totalPausedSecs = pauses.reduce((s, p) => s + p.duration, 0);
+
+  const stream100m = [];
+  const totalDist = dist.length ? dist[dist.length-1] : 0;
+
+  const pausesByMarker = {};
+  pauses.forEach(p => {
+    const marker = Math.ceil(p.pauseDist / 100) * 100;
+    pausesByMarker[marker] = p;
+  });
+
+  for (let marker = 0; marker <= totalDist; marker += 100) {
+    if (pausesByMarker[marker]) {
+      const p = pausesByMarker[marker];
+      stream100m.push({ isPause: true, pauseDist: (p.pauseDist/1000).toFixed(2), resumeDist: (p.resumeDist/1000).toFixed(2), pauseTime: fmtTime(p.pauseTime), resumeTime: fmtTime(p.resumeTime), duration: fmtTime(p.duration) });
+    }
+
+    let closest = 0, closestDiff = Infinity;
+    for (let i = 0; i < dist.length; i++) {
+      const diff = Math.abs(dist[i] - marker);
+      if (diff < closestDiff) { closestDiff = diff; closest = i; }
+      if (dist[i] > marker + 50) break;
+    }
+    const i = closest;
+    const insidePause = pauses.some(p => time[i] >= p.pauseTime && time[i] <= p.resumeTime);
+
+    const cadSpm = cad[i] ? cad[i] * 2 : null;
+    const strideLen = (vel[i] > 0 && cadSpm) ? (vel[i] / (cadSpm / 60)).toFixed(2) : null;
+    const gradeAdj = grade[i] !== undefined ? grade[i] : 0;
+    const gapVel = vel[i] > 0 ? vel[i] / (1 + gradeAdj * 0.033) : null;
+
+    stream100m.push({
+      isPause: false, insidePause,
+      dist: (marker / 1000).toFixed(2),
+      time: fmtTime(time[i] || 0),
+      pace: (!insidePause && vel[i] > 0) ? fmtPace(vel[i]) : null,
+      gap:  (!insidePause && gapVel)     ? fmtPace(gapVel) : null,
+      hr:   hr[i]      ? Math.round(hr[i]) : null,
+      alt:  alt[i] !== undefined ? Math.round(alt[i]) : null,
+      grade: grade[i] !== undefined ? grade[i].toFixed(1) : null,
+      cad:  (!insidePause && cadSpm) ? cadSpm : null,
+      stride: (!insidePause) ? strideLen : null,
+      watts: (!insidePause && watts[i]) ? Math.round(watts[i]) : null,
+      temp:  temp[i]   ? temp[i] : null,
+    });
+  }
+
+  const spikes = detectSpikes(hr, vel, alt, time, dist, grade);
+  const splits = buildSplitsTable(hr, vel, alt, dist, time);
+  const zones  = calcZones(hr, time);
+
+  const hasCad    = stream100m.some(p => !p.isPause && p.cad);
+  const hasStride = stream100m.some(p => !p.isPause && p.stride);
+  const hasGAP    = stream100m.some(p => !p.isPause && p.gap);
+  const hasWatts  = stream100m.some(p => !p.isPause && p.watts);
+  const hasTemp   = stream100m.some(p => !p.isPause && p.temp);
+
+  const streamLines = stream100m.map(p => {
+    if (p.isPause) {
+      return `  WATCH PAUSED at ${p.pauseDist}km (${p.pauseTime}) -- resumed at ${p.resumeDist}km (${p.resumeTime}) · paused for ${p.duration}`;
+    }
+    let line = `  ${p.dist}km | t:${p.time} | pace:${p.pace||'--'}/km`;
+    if (hasGAP)    line += ` | GAP:${p.gap||'--'}/km`;
+    line += ` | HR:${p.hr||'--'}bpm`;
+    line += ` | alt:${p.alt !== null ? p.alt+'m' : '--'}`;
+    line += ` | grade:${p.grade !== null ? p.grade+'%' : '--'}`;
+    if (hasCad)    line += ` | cad:${p.cad||'--'}spm`;
+    if (hasStride) line += ` | stride:${p.stride||'--'}m`;
+    if (hasWatts)  line += ` | watts:${p.watts||'--'}W`;
+    if (hasTemp)   line += ` | temp:${p.temp||'--'}C`;
+    return line;
+  }).join('\n');
+
+  const txt = `STRAVA SESSION -- ${currentActivity.name}
+Date: ${fmtDate(currentActivity.start_date_local)}
+Type: ${(['Run','Race','Long run','Workout'][currentActivity.workout_type]) || 'Run'}${currentActivity.location_city ? ` · ${currentActivity.location_city}` : ''}
+-----------------------------------------
+SUMMARY
+Distance:       ${fmtDist(currentActivity.distance)}
+Moving time:    ${fmtTime(currentActivity.moving_time)}
+Elapsed time:   ${fmtTime(currentActivity.elapsed_time || currentActivity.moving_time)}
+Start time:     ${startTime}
+End time:       ${endTime}
+Avg pace:       ${fmtPace(currentActivity.average_speed)} /km
+Best pace:      ${fmtPace(maxVel)} /km
+Avg HR:         ${avgHR || '--'} bpm
+Max HR:         ${maxHR || '--'} bpm
+Min HR:         ${minHR || '--'} bpm
+Elevation gain: ${elevGain}m
+Elevation loss: ${elevLoss}m
+${avgCad  ? `Avg cadence:    ${avgCad} spm\n` : ''}\
+${avgWatts? `Avg power:      ${avgWatts}W\n` : ''}\
+${avgTemp ? `Avg temp:       ${avgTemp}C\n` : ''}\
+Suffer score:   ${currentActivity.suffer_score || 'N/A'}
+Calories:       ${currentActivity.calories || 'N/A'} kcal
+${pauses.length ? `Watch pauses:   ${pauses.length} pause${pauses.length>1?'s':''} · total paused time ${fmtTime(totalPausedSecs)}\n` : ''}\
+${effortRating ? `Perceived effort: ${effortRating}/10\n` : ''}\
+${effortNotes  ? `How I felt:     ${effortNotes}\n` : ''}
+HR ZONES (based on 200bpm max)
+${zones.map(z => `  ${z.name}: ${z.pct}% -- ${fmtTime(z.secs)}`).join('\n')}
+
+PER-KM SPLITS
+${splits.map(s => `  KM ${s.km}: pace ${s.pace}/km · HR ${s.hr} · elev ${s.elev}`).join('\n')}
+
+NOTABLE MOMENTS
+${spikes.map(s => `  ${s.at} -- ${s.title} (${s.detail})`).join('\n')}
+
+RAW STREAM (every 100m)
+Columns: dist | elapsed | pace | ${hasGAP?'GAP | ':''}HR | altitude | grade${hasCad?' | cadence':''}${hasStride?' | stride':''}${hasWatts?' | power':''}${hasTemp?' | temp':''}
+${streamLines}${garminData ? '\n\n' + garminData : ''}`;
+
+  navigator.clipboard.writeText(txt).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.classList.add('copied');
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg> Copied!`;
+    setTimeout(() => {
+      btn.classList.remove('copied');
+      btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copy session data`;
+    }, 2500);
+  }).catch(() => {
+    prompt('Copy this text:', txt);
+  });
 }
 
-function center(str, width) {
-  const pad = Math.max(0, Math.floor((width - str.length) / 2));
-  return ' '.repeat(pad) + str;
-}
-
-function stressLabel(val) {
-  if (val < 26) return '  (Low)';
-  if (val < 51) return '  (Medium)';
-  if (val < 76) return '  (High)';
-  return '  (Very High)';
-}
+init();
 </script>
 </body>
 </html>
