@@ -478,50 +478,74 @@ async function generateReport() {
   btn.innerHTML = '<span class="spinner"></span> Fetching data…';
   setMsg('Connecting to Strava and Garmin Connect…', '');
 
-  try {
-    const [stravaRes, garminRes] = await Promise.all([
-      fetchStrava(),
-      fetchGarmin(),
-    ]);
+  const [stravaResult, garminResult] = await Promise.allSettled([
+    fetchStrava(),
+    fetchGarmin(),
+  ]);
 
-    setMsg('Formatting report…', '');
+  const stravaRes = stravaResult.status === 'fulfilled'
+    ? stravaResult.value
+    : { error: stravaResult.reason?.message || 'Unknown Strava error' };
 
-    // Update stored Strava token if refreshed
-    if (stravaRes?.new_token?.access_token) {
-      const nt = stravaRes.new_token;
-      state.stravaToken = nt.access_token;
-      state.stravaRefresh = nt.refresh_token;
-      state.stravaExpiry = nt.expires_at;
-      localStorage.setItem('strava_access_token', nt.access_token);
-      localStorage.setItem('strava_refresh_token', nt.refresh_token);
-      localStorage.setItem('strava_expires_at', String(nt.expires_at));
-    }
+  const garminRes = garminResult.status === 'fulfilled'
+    ? garminResult.value
+    : { error: garminResult.reason?.message || 'Unknown Garmin error' };
 
+  // Update stored Strava token if refreshed
+  if (stravaRes?.new_token?.access_token) {
+    const nt = stravaRes.new_token;
+    state.stravaToken = nt.access_token;
+    state.stravaRefresh = nt.refresh_token;
+    state.stravaExpiry = nt.expires_at;
+    localStorage.setItem('strava_access_token', nt.access_token);
+    localStorage.setItem('strava_refresh_token', nt.refresh_token);
+    localStorage.setItem('strava_expires_at', String(nt.expires_at));
+  }
+
+  const bothFailed = stravaRes?.error && garminRes?.error;
+  if (bothFailed) {
+    setMsg(`Strava: ${stravaRes.error} | Garmin: ${garminRes.error}`, 'err');
+  } else {
     const report = buildReport(stravaRes, garminRes);
     showReport(report);
-    setMsg('Report generated.', 'ok');
-  } catch (e) {
-    setMsg(`Error: ${e.message}`, 'err');
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = 'Generate Report';
-    updateGenerateBtn();
+    const warnings = [
+      stravaRes?.error ? `Strava error: ${stravaRes.error}` : null,
+      garminRes?.error ? `Garmin error: ${garminRes.error}` : null,
+    ].filter(Boolean);
+    setMsg(warnings.length ? warnings.join(' | ') : 'Report generated.', warnings.length ? 'err' : 'ok');
   }
+
+  btn.disabled = false;
+  btn.innerHTML = 'Generate Report';
+  updateGenerateBtn();
+}
+
+async function safeFetch(url, options, label) {
+  const r = await fetch(url, options);
+  const text = await r.text();
+  if (!text) throw new Error(`${label} function returned an empty response (HTTP ${r.status}) — it likely timed out`);
+  let d;
+  try { d = JSON.parse(text); } catch {
+    throw new Error(`${label} returned non-JSON (HTTP ${r.status}): ${text.slice(0, 120)}`);
+  }
+  if (!r.ok) throw new Error(`${label}: ${d.error || r.statusText}`);
+  return d;
 }
 
 async function fetchStrava() {
-  const r = await fetch('/.netlify/functions/strava-data', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      access_token: state.stravaToken,
-      refresh_token: state.stravaRefresh,
-      expires_at: state.stravaExpiry,
-    }),
-  });
-  const d = await r.json();
-  if (!r.ok) throw new Error(`Strava: ${d.error || r.statusText}`);
-  return d;
+  return safeFetch(
+    '/.netlify/functions/strava-data',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        access_token: state.stravaToken,
+        refresh_token: state.stravaRefresh,
+        expires_at: state.stravaExpiry,
+      }),
+    },
+    'Strava'
+  );
 }
 
 async function fetchGarmin() {
@@ -533,14 +557,15 @@ async function fetchGarmin() {
     localStorage.setItem('garmin_email', email);
   }
 
-  const r = await fetch('/.netlify/functions/garmin-data', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, mfa_code }),
-  });
-  const d = await r.json();
-  if (!r.ok) throw new Error(`Garmin: ${d.error || r.statusText}`);
-  return d;
+  return safeFetch(
+    '/.netlify/functions/garmin-data',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, mfa_code }),
+    },
+    'Garmin'
+  );
 }
 
 // ─── Report formatting ────────────────────────────────────────────────────────
