@@ -1,5 +1,6 @@
 'use strict';
-const { GarminConnect } = require('garmin-connect');
+const _gc = require('@flow-js/garmin-connect');
+const GarminConnect = _gc.GarminConnect || _gc.default?.GarminConnect || _gc.default || _gc;
 
 // ── Format helpers ──────────────────────────────────────────────
 

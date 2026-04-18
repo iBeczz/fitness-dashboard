@@ -4,6 +4,6 @@
   "description": "Strava + Garmin Connect fitness report generator",
   "private": true,
   "dependencies": {
-    "garmin-connect": "^2.0.0"
+    "@flow-js/garmin-connect": "^1.6.16"
   }
 }
