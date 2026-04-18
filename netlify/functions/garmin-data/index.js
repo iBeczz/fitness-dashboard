@@ -566,10 +566,11 @@ exports.handler = async (event) => {
     return safeGet(yesterdayFn, label + '_yesterday');
   }
 
-  async function rawGet(path) {
+  async function rawGet(path, label) {
     try {
       return await GCClient.get('https://connect.garmin.com' + path);
     } catch (e) {
+      if (label) fetchErrors[label] = String(e.message || e).slice(0, 120);
       return null;
     }
   }
@@ -577,7 +578,7 @@ exports.handler = async (event) => {
   // Weekly RHR: one RHR number per day for the past 7 days
   async function getRhrDay(dateString) {
     try {
-      const raw = await GCClient.getHeartRateData(dateString);
+      const raw = await GCClient.getHeartRate(new Date(dateString));
       if (!raw) return null;
       return raw.restingHeartRate || extractRhrValue(raw) || null;
     } catch (e) {
@@ -592,6 +593,9 @@ exports.handler = async (event) => {
     return d.toISOString().split('T')[0];
   });
 
+  const d  = new Date(dateStr);
+  const dy = new Date(yesterdayStr);
+
   // Parallel fetch — all 11 main + 7 RHR days
   const [
     sleepR, hrvR, bbR, stressR, rhrTodayR,
@@ -599,40 +603,40 @@ exports.handler = async (event) => {
     ...rhrWeekR
   ] = await Promise.allSettled([
     withFallback('sleep',
-      () => GCClient.getSleepData(dateStr),
-      () => GCClient.getSleepData(yesterdayStr)
+      () => GCClient.getSleepData(d),
+      () => GCClient.getSleepData(dy)
     ),
     withFallback('hrv',
-      () => rawGet(`/proxy/hrv-service/hrv/${dateStr}`),
-      () => rawGet(`/proxy/hrv-service/hrv/${yesterdayStr}`)
+      () => rawGet(`/proxy/hrv-service/hrv/${dateStr}`, 'hrv_today'),
+      () => rawGet(`/proxy/hrv-service/hrv/${yesterdayStr}`, 'hrv_yesterday')
     ),
     withFallback('bb',
-      () => GCClient.getBodyBattery(dateStr, dateStr),
-      () => GCClient.getBodyBattery(yesterdayStr, yesterdayStr)
+      () => rawGet(`/proxy/wellness-service/wellness/bodyBattery/readingsByDateRange?startDate=${dateStr}&endDate=${dateStr}`, 'bb_raw_today'),
+      () => rawGet(`/proxy/wellness-service/wellness/bodyBattery/readingsByDateRange?startDate=${yesterdayStr}&endDate=${yesterdayStr}`, 'bb_raw_yesterday')
     ),
     withFallback('stress',
-      () => GCClient.getStressData(dateStr),
-      () => GCClient.getStressData(yesterdayStr)
+      () => rawGet(`/proxy/wellness-service/wellness/dailyStress/${dateStr}`, 'stress_raw_today'),
+      () => rawGet(`/proxy/wellness-service/wellness/dailyStress/${yesterdayStr}`, 'stress_raw_yesterday')
     ),
     withFallback('hr',
-      () => GCClient.getHeartRateData(dateStr),
-      () => GCClient.getHeartRateData(yesterdayStr)
+      () => GCClient.getHeartRate(d),
+      () => GCClient.getHeartRate(dy)
     ),
     withFallback('mm_now',
-      () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${dateStr}`),
-      () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${yesterdayStr}`)
+      () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${dateStr}`, 'mm_now_today'),
+      () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${yesterdayStr}`, 'mm_now_yesterday')
     ),
-    safeGet(() => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${fourWeeksAgoStr}`), 'mm_4w'),
+    safeGet(() => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${fourWeeksAgoStr}`, 'mm_4w'), 'mm_4w'),
     withFallback('ts',
-      () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${dateStr}`),
-      () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${yesterdayStr}`)
+      () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${dateStr}`, 'ts_today'),
+      () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${yesterdayStr}`, 'ts_yesterday')
     ),
     withFallback('readiness',
-      () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${dateStr}`),
-      () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${yesterdayStr}`)
+      () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${dateStr}`, 'readiness_today'),
+      () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${yesterdayStr}`, 'readiness_yesterday')
     ),
-    safeGet(() => rawGet('/proxy/metrics-service/metrics/racepredictions'), 'race'),
-    safeGet(() => rawGet('/proxy/biometric-service/lactateThreshold'), 'lactate'),
+    safeGet(() => rawGet('/proxy/metrics-service/metrics/racepredictions', 'race'), 'race'),
+    safeGet(() => rawGet('/proxy/biometric-service/lactateThreshold', 'lactate'), 'lactate'),
     ...rhrDays.map(d => getRhrDay(d)),
   ]);
 
