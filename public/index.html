@@ -1505,7 +1505,16 @@ async function connectGarmin() {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });
-    const data = await resp.json();
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch {
+      const hint = resp.status === 404
+        ? 'Function not found (404) — the Garmin function may still be deploying on Netlify. Check your Netlify dashboard for build errors.'
+        : `Server returned HTTP ${resp.status} (not JSON). Check Netlify deploy logs.`;
+      errEl.textContent = hint;
+      btn.disabled = false; btn.textContent = 'Connect';
+      return;
+    }
     if (!resp.ok) {
       errEl.textContent = data.error || 'Connection failed';
       btn.disabled = false; btn.textContent = 'Connect';
@@ -1595,7 +1604,16 @@ async function doFetchGarminData() {
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(30000),
     });
-    const data = await resp.json();
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch {
+      const hint = resp.status === 404
+        ? 'Garmin function not found (404) — check Netlify dashboard for deploy errors.'
+        : `Server returned HTTP ${resp.status} (not JSON). Check Netlify deploy logs.`;
+      resultEl.innerHTML = `<div class="error-banner">${hint}</div>`;
+      fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch Garmin Data';
+      return;
+    }
     if (!resp.ok) {
       resultEl.innerHTML = `<div class="error-banner">${data.error || 'Garmin fetch failed'}</div>`;
       fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch Garmin Data';
