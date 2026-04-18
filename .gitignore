@@ -1,0 +1,8 @@
+node_modules/
+.env
+.env.local
+.netlify/
+*.pyc
+__pycache__/
+.DS_Store
+Thumbs.db

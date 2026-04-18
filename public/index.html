@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fitness Report Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #7d8590;
+      --strava: #FC4C02;
+      --strava-dim: #7a2501;
+      --garmin: #00B2F0;
+      --garmin-dim: #005f82;
+      --success: #3fb950;
+      --error: #f85149;
+      --warning: #d29922;
+      --report-bg: #010409;
+      --report-text: #c9d1d9;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px 48px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+    header p { color: var(--muted); font-size: 0.9rem; }
+
+    .container { max-width: 860px; margin: 0 auto; }
+
+    .cards {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 620px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+    .card-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 1rem;
+      margin-bottom: 16px;
+    }
+    .dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .dot.connected { background: var(--success); }
+    .dot.error { background: var(--error); }
+
+    .status-line {
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 14px;
+      min-height: 1.2em;
+    }
+    .status-line.ok { color: var(--success); }
+    .status-line.err { color: var(--error); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.88rem;
+      font-weight: 500;
+      padding: 9px 16px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: opacity 0.15s, background 0.15s;
+      text-decoration: none;
+      background: none;
+      color: var(--text);
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-strava { background: var(--strava); border-color: var(--strava); }
+    .btn-strava:hover:not(:disabled) { opacity: 0.88; }
+    .btn-disconnect { background: transparent; border-color: var(--border); color: var(--muted); font-size: 0.8rem; padding: 6px 12px; }
+    .btn-disconnect:hover { border-color: var(--error); color: var(--error); }
+    .btn-generate {
+      width: 100%;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--strava) 0%, #c73d00 50%, var(--garmin-dim) 100%);
+      border: none;
+      font-size: 1rem;
+      padding: 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+    .btn-generate:hover:not(:disabled) { opacity: 0.88; }
+    .btn-copy {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+      padding: 7px 14px;
+      border-radius: 6px;
+    }
+    .btn-copy:hover { border-color: var(--success); color: var(--success); }
+    .btn-copy.copied { border-color: var(--success); color: var(--success); }
+
+    label { display: block; font-size: 0.82rem; color: var(--muted); margin-bottom: 5px; }
+    input[type="email"], input[type="password"], input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.88rem;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: var(--garmin); }
+    .form-row { display: flex; gap: 8px; align-items: center; }
+    .form-row input { flex: 1; margin: 0; }
+
+    .mfa-row { margin-top: 2px; }
+
+    .section { margin-bottom: 20px; }
+
+    #status-msg {
+      min-height: 1.4em;
+      font-size: 0.88rem;
+      color: var(--muted);
+      text-align: center;
+      padding: 6px 0;
+    }
+    #status-msg.err { color: var(--error); }
+    #status-msg.ok { color: var(--success); }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #report-section { display: none; }
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .report-header h2 { font-size: 0.95rem; font-weight: 600; }
+
+    #report-output {
+      background: var(--report-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px 22px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 0.78rem;
+      line-height: 1.55;
+      color: var(--report-text);
+      white-space: pre;
+      overflow-x: auto;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+
+    details {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 32px;
+    }
+    summary {
+      padding: 12px 16px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--muted);
+      user-select: none;
+    }
+    summary:hover { color: var(--text); }
+    .setup-body {
+      padding: 0 16px 16px;
+      font-size: 0.82rem;
+      color: var(--muted);
+      line-height: 1.7;
+    }
+    .setup-body h3 { color: var(--text); margin: 12px 0 4px; font-size: 0.88rem; }
+    .setup-body code {
+      background: var(--bg);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--garmin);
+    }
+    .setup-body ol { padding-left: 20px; }
+    .setup-body li { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>Fitness Report Generator</h1>
+    <p>Pull your latest Strava run + Garmin wellness data into one formatted report</p>
+  </header>
+
+  <div class="cards">
+    <!-- Strava card -->
+    <div class="card">
+      <div class="card-title">
+        <div class="dot" id="strava-dot"></div>
+        <span style="color: var(--strava)">▶</span>
+        <span>Strava</span>
+      </div>
+      <div class="status-line" id="strava-status">Not connected</div>
+      <div id="strava-connect-area">
+        <button class="btn btn-strava" id="btn-strava-connect" onclick="connectStrava()">
+          Connect via OAuth
+        </button>
+      </div>
+      <div id="strava-connected-area" style="display:none">
+        <button class="btn btn-disconnect" onclick="disconnectStrava()">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Garmin card -->
+    <div class="card">
+      <div class="card-title">
+        <div class="dot" id="garmin-dot"></div>
+        <span style="color: var(--garmin)">◆</span>
+        <span>Garmin Connect</span>
+      </div>
+      <div class="status-line" id="garmin-status">Enter credentials below</div>
+      <label for="garmin-email">Email</label>
+      <input type="email" id="garmin-email" placeholder="you@example.com" oninput="onGarminInput()" />
+      <label for="garmin-password">Password</label>
+      <input type="password" id="garmin-password" placeholder="••••••••" oninput="onGarminInput()" />
+      <div class="mfa-row" id="mfa-row" style="display:none">
+        <label for="garmin-mfa">2FA / MFA Code</label>
+        <input type="text" id="garmin-mfa" placeholder="6-digit code" maxlength="8" />
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:2px">
+        <input type="checkbox" id="garmin-remember" onchange="onRememberToggle()" style="width:auto;margin:0">
+        <label for="garmin-remember" style="margin:0;cursor:pointer">Remember email</label>
+        <span style="flex:1"></span>
+        <span id="mfa-toggle" onclick="toggleMFA()"
+          style="font-size:0.78rem;color:var(--muted);cursor:pointer;text-decoration:underline">
+          Have 2FA?
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <button class="btn btn-generate" id="btn-generate" onclick="generateReport()" disabled>
+      Generate Report
+    </button>
+    <div id="status-msg"></div>
+  </div>
+
+  <div id="report-section">
+    <div class="report-header">
+      <h2>Report</h2>
+      <button class="btn btn-copy" id="btn-copy" onclick="copyReport()">Copy to clipboard</button>
+    </div>
+    <div id="report-output"></div>
+  </div>
+
+  <details>
+    <summary>⚙ Setup instructions</summary>
+    <div class="setup-body">
+      <h3>1 — Create a Strava API Application</h3>
+      <ol>
+        <li>Go to <strong>strava.com/settings/api</strong> and create an app.</li>
+        <li>Set <strong>Authorization Callback Domain</strong> to your Netlify site domain (e.g. <code>your-site.netlify.app</code>).</li>
+        <li>Note your <strong>Client ID</strong> and <strong>Client Secret</strong>.</li>
+      </ol>
+      <h3>2 — Deploy to Netlify</h3>
+      <ol>
+        <li>Push this project to a GitHub repo.</li>
+        <li>In Netlify, click <em>Add new site → Import from Git</em>, select the repo.</li>
+        <li>In <em>Site settings → Environment variables</em>, add:<br>
+          <code>STRAVA_CLIENT_ID</code> = your client ID<br>
+          <code>STRAVA_CLIENT_SECRET</code> = your client secret
+        </li>
+        <li>Trigger a redeploy so the env vars take effect.</li>
+      </ol>
+      <h3>3 — Garmin Connect</h3>
+      <p>Enter your Garmin email and password directly — no API keys needed. Credentials travel over HTTPS and are never stored. If Garmin asks for 2FA, tick <em>Have 2FA?</em> to reveal the MFA field.</p>
+      <h3>Notes</h3>
+      <ul style="padding-left:20px">
+        <li>The Garmin function may time out on Netlify's free tier (10 s limit). Netlify Pro raises this to 26 s.</li>
+        <li>Garmin's SSO occasionally blocks automated logins. If you get repeated auth failures, wait 30 minutes and retry.</li>
+        <li>Power data in Strava streams requires a running power meter or compatible device/app (e.g. Stryd).</li>
+      </ul>
+    </div>
+  </details>
+</div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────────────
+const state = {
+  stravaToken: null,
+  stravaRefresh: null,
+  stravaExpiry: null,
+  stravaAthlete: null,
+  garminReady: false,
+};
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+(function init() {
+  // Check URL params from OAuth callback
+  const params = new URLSearchParams(location.search);
+  const at = params.get('strava_access_token');
+  const err = params.get('strava_error');
+
+  if (at) {
+    localStorage.setItem('strava_access_token', at);
+    localStorage.setItem('strava_refresh_token', params.get('strava_refresh_token') || '');
+    localStorage.setItem('strava_expires_at', params.get('strava_expires_at') || '0');
+    localStorage.setItem('strava_athlete', params.get('strava_athlete') || '');
+    history.replaceState(null, '', location.pathname);
+  }
+
+  if (err) {
+    setStravaError(decodeURIComponent(err));
+    history.replaceState(null, '', location.pathname);
+  }
+
+  // Load from storage
+  const storedToken = localStorage.getItem('strava_access_token');
+  if (storedToken) {
+    state.stravaToken = storedToken;
+    state.stravaRefresh = localStorage.getItem('strava_refresh_token');
+    state.stravaExpiry = Number(localStorage.getItem('strava_expires_at'));
+    state.stravaAthlete = localStorage.getItem('strava_athlete') || 'Athlete';
+    setStravaConnected();
+  } else if (!err) {
+    setStravaDisconnected();
+  }
+
+  // Garmin email from storage
+  const savedEmail = localStorage.getItem('garmin_email');
+  if (savedEmail) {
+    document.getElementById('garmin-email').value = savedEmail;
+    document.getElementById('garmin-remember').checked = true;
+  }
+
+  onGarminInput();
+  updateGenerateBtn();
+})();
+
+// ─── Strava OAuth ─────────────────────────────────────────────────────────────
+async function connectStrava() {
+  const btn = document.getElementById('btn-strava-connect');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Loading…';
+  try {
+    const r = await fetch('/.netlify/functions/strava-config');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    location.href = d.authUrl;
+  } catch (e) {
+    setStravaError(e.message);
+    btn.disabled = false;
+    btn.innerHTML = 'Connect via OAuth';
+  }
+}
+
+function disconnectStrava() {
+  ['strava_access_token','strava_refresh_token','strava_expires_at','strava_athlete']
+    .forEach(k => localStorage.removeItem(k));
+  state.stravaToken = state.stravaRefresh = state.stravaExpiry = state.stravaAthlete = null;
+  setStravaDisconnected();
+  updateGenerateBtn();
+}
+
+function setStravaConnected() {
+  dot('strava-dot', 'connected');
+  setStatus('strava-status', `Connected as ${state.stravaAthlete}`, 'ok');
+  document.getElementById('strava-connect-area').style.display = 'none';
+  document.getElementById('strava-connected-area').style.display = 'block';
+  updateGenerateBtn();
+}
+
+function setStravaDisconnected() {
+  dot('strava-dot', '');
+  setStatus('strava-status', 'Not connected', '');
+  document.getElementById('strava-connect-area').style.display = 'block';
+  document.getElementById('strava-connected-area').style.display = 'none';
+  updateGenerateBtn();
+}
+
+function setStravaError(msg) {
+  dot('strava-dot', 'error');
+  setStatus('strava-status', `Error: ${msg}`, 'err');
+  document.getElementById('strava-connect-area').style.display = 'block';
+  document.getElementById('strava-connected-area').style.display = 'none';
+  updateGenerateBtn();
+}
+
+// ─── Garmin ───────────────────────────────────────────────────────────────────
+function onGarminInput() {
+  const email = document.getElementById('garmin-email').value.trim();
+  const pass = document.getElementById('garmin-password').value;
+  state.garminReady = email.length > 0 && pass.length > 0;
+  if (state.garminReady) {
+    dot('garmin-dot', 'connected');
+    setStatus('garmin-status', 'Ready', 'ok');
+  } else {
+    dot('garmin-dot', '');
+    setStatus('garmin-status', 'Enter credentials below', '');
+  }
+  updateGenerateBtn();
+}
+
+function onRememberToggle() {
+  const checked = document.getElementById('garmin-remember').checked;
+  if (checked) {
+    localStorage.setItem('garmin_email', document.getElementById('garmin-email').value.trim());
+  } else {
+    localStorage.removeItem('garmin_email');
+  }
+}
+
+function toggleMFA() {
+  const row = document.getElementById('mfa-row');
+  const toggle = document.getElementById('mfa-toggle');
+  if (row.style.display === 'none') {
+    row.style.display = 'block';
+    toggle.textContent = 'Hide 2FA';
+  } else {
+    row.style.display = 'none';
+    toggle.textContent = 'Have 2FA?';
+  }
+}
+
+// ─── Generate report ──────────────────────────────────────────────────────────
+function updateGenerateBtn() {
+  document.getElementById('btn-generate').disabled = !(state.stravaToken && state.garminReady);
+}
+
+async function generateReport() {
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Fetching data…';
+  setMsg('Connecting to Strava and Garmin Connect…', '');
+
+  try {
+    const [stravaRes, garminRes] = await Promise.all([
+      fetchStrava(),
+      fetchGarmin(),
+    ]);
+
+    setMsg('Formatting report…', '');
+
+    // Update stored Strava token if refreshed
+    if (stravaRes?.new_token?.access_token) {
+      const nt = stravaRes.new_token;
+      state.stravaToken = nt.access_token;
+      state.stravaRefresh = nt.refresh_token;
+      state.stravaExpiry = nt.expires_at;
+      localStorage.setItem('strava_access_token', nt.access_token);
+      localStorage.setItem('strava_refresh_token', nt.refresh_token);
+      localStorage.setItem('strava_expires_at', String(nt.expires_at));
+    }
+
+    const report = buildReport(stravaRes, garminRes);
+    showReport(report);
+    setMsg('Report generated.', 'ok');
+  } catch (e) {
+    setMsg(`Error: ${e.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Generate Report';
+    updateGenerateBtn();
+  }
+}
+
+async function fetchStrava() {
+  const r = await fetch('/.netlify/functions/strava-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      access_token: state.stravaToken,
+      refresh_token: state.stravaRefresh,
+      expires_at: state.stravaExpiry,
+    }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(`Strava: ${d.error || r.statusText}`);
+  return d;
+}
+
+async function fetchGarmin() {
+  const email = document.getElementById('garmin-email').value.trim();
+  const password = document.getElementById('garmin-password').value;
+  const mfa_code = document.getElementById('garmin-mfa').value.trim() || undefined;
+
+  if (document.getElementById('garmin-remember').checked) {
+    localStorage.setItem('garmin_email', email);
+  }
+
+  const r = await fetch('/.netlify/functions/garmin-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, mfa_code }),
+  });
+  const d = await r.json();
+  if (!r.ok) throw new Error(`Garmin: ${d.error || r.statusText}`);
+  return d;
+}
+
+// ─── Report formatting ────────────────────────────────────────────────────────
+function buildReport(strava, garmin) {
+  const now = new Date();
+  const dateFull = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const W = 68;
+  const hr = '═'.repeat(W);
+  const thinHr = '─'.repeat(W);
+
+  const lines = [
+    hr,
+    center(`FITNESS REPORT — ${dateFull}`, W),
+    hr,
+    '',
+  ];
+
+  lines.push(...formatGarminSection(garmin, thinHr));
+  lines.push('');
+  lines.push(...formatStravaSection(strava, thinHr));
+  lines.push('');
+  lines.push(hr);
+  lines.push(center(`Report generated ${dateFull} at ${timeStr}`, W));
+  lines.push(hr);
+
+  return lines.join('\n');
+}
+
+function formatGarminSection(g, thinHr) {
+  const L = [];
+  L.push(thinHr);
+  L.push('GARMIN CONNECT — DAILY WELLNESS');
+  L.push(thinHr);
+
+  if (g?.error) {
+    L.push(`  ✗ Error: ${g.error}`);
+    return L;
+  }
+
+  // ── Sleep ──
+  L.push('');
+  L.push('SLEEP');
+  const sl = g?.sleep?.dailySleepDTO ?? g?.sleep;
+  if (sl) {
+    const score = sl?.sleepScores?.overall?.value ?? sl?.sleepScore ?? '—';
+    const qual  = sl?.sleepScores?.overall?.qualifierKey ?? '';
+    L.push(`  Score:           ${score}${qual ? ' / 100  (' + titleCase(qual) + ')' : '/100'}`);
+    L.push(`  Total Duration:  ${fmtHMS(sl?.sleepTimeSeconds)}`);
+    L.push(`  Deep Sleep:      ${fmtHMS(sl?.deepSleepSeconds)}`);
+    L.push(`  Light Sleep:     ${fmtHMS(sl?.lightSleepSeconds)}`);
+    L.push(`  REM Sleep:       ${fmtHMS(sl?.remSleepSeconds)}`);
+    L.push(`  Awake:           ${fmtHMS(sl?.awakeSleepSeconds)}`);
+    if (sl?.averageSpO2Value != null) L.push(`  Avg SpO₂:        ${sl.averageSpO2Value.toFixed(1)}%`);
+    if (sl?.averageRespirationValue != null) L.push(`  Avg Respiration: ${sl.averageRespirationValue.toFixed(1)} brpm`);
+  } else {
+    L.push('  No sleep data available');
+  }
+
+  // ── HRV ──
+  L.push('');
+  L.push('HEART RATE VARIABILITY (HRV)');
+  const hrv = g?.hrv?.hrvSummary ?? g?.hrv;
+  if (hrv) {
+    const status = hrv?.status ?? hrv?.lastNightStatus ?? '—';
+    L.push(`  Status:          ${titleCase(String(status).replace(/_/g,' '))}`);
+    if (hrv?.lastNight != null) L.push(`  Last Night:      ${hrv.lastNight} ms (RMSSD)`);
+    if (hrv?.weeklyAvg != null) L.push(`  5-Night Average: ${hrv.weeklyAvg} ms`);
+    if (hrv?.lastNight5MinHigh != null) L.push(`  Night-time High: ${hrv.lastNight5MinHigh} ms`);
+    const bl = hrv?.baseline;
+    if (bl) {
+      L.push(`  Baseline Range:  ${bl.balancedLow ?? '—'}–${bl.balancedUpper ?? '—'} ms`);
+    }
+  } else {
+    L.push('  No HRV data available');
+  }
+
+  // ── Resting HR ──
+  L.push('');
+  L.push('RESTING HEART RATE');
+  const rhr = g?.rhr;
+  const rhrVal = rhr?.allMetrics?.metricsMap?.WELLNESS_RESTING_HEART_RATE?.[0]?.value
+    ?? rhr?.restingHeartRate
+    ?? rhr?.value
+    ?? null;
+  L.push(`  Resting HR:      ${rhrVal != null ? rhrVal + ' bpm' : 'No data'}`);
+
+  // ── Body Battery ──
+  L.push('');
+  L.push('BODY BATTERY');
+  const bb = Array.isArray(g?.body_battery) ? g.body_battery[0] : g?.body_battery;
+  if (bb) {
+    if (bb?.charged != null) L.push(`  Charged:         ${bb.charged}/100`);
+    if (bb?.drained != null) L.push(`  Drained:         ${bb.drained}`);
+    const vals = bb?.bodyBatteryValuesArray ?? bb?.bodyBatteryValueDescriptorDTOList;
+    if (vals?.length) {
+      const latest = vals[vals.length - 1];
+      const bbVal = Array.isArray(latest) ? latest[1] : (latest?.bodyBatteryLevel ?? latest?.value);
+      if (bbVal != null) L.push(`  Current Level:   ${bbVal}/100`);
+    }
+  } else {
+    L.push('  No Body Battery data available');
+  }
+
+  // ── Stress ──
+  L.push('');
+  L.push('STRESS');
+  const stress = g?.stress;
+  if (stress) {
+    const avg = stress?.overallStressLevel ?? stress?.avgStressLevel ?? stress?.averageStressLevel;
+    const max = stress?.maxStressLevel;
+    const rest = stress?.restStressDuration;
+    if (avg != null) L.push(`  Average:         ${avg}${stressLabel(avg)}`);
+    if (max != null) L.push(`  Peak:            ${max}`);
+    if (rest != null) L.push(`  Rest Duration:   ${fmtHMS(rest)}`);
+  } else {
+    L.push('  No stress data available');
+  }
+
+  // ── VO2max + Training Status ──
+  L.push('');
+  L.push('PERFORMANCE METRICS');
+  const mm = g?.max_metrics;
+  const vo2 = mm?.generic?.VO2MaxValue ?? mm?.[0]?.generic?.VO2MaxValue ?? null;
+  const fitnessLvl = mm?.generic?.fitnessLevel ?? mm?.[0]?.generic?.fitnessLevel ?? null;
+  L.push(`  VO₂max:          ${vo2 != null ? vo2.toFixed(1) + ' mL/kg/min' + (fitnessLvl ? '  (' + titleCase(fitnessLvl) + ')' : '') : 'No data'}`);
+
+  const ts = g?.training_status?.mostRecentTrainingStatus ?? g?.training_status;
+  if (ts) {
+    const tsType = ts?.trainingStatusType ?? ts?.status ?? '—';
+    L.push(`  Training Status: ${titleCase(String(tsType).replace(/_/g,' '))}`);
+    const tl = ts?.trainingLoadData?.currentTrainingLoad ?? ts?.trainingLoad?.currentTrainingLoad;
+    if (tl != null) L.push(`  Training Load:   ${Math.round(tl)}`);
+  }
+
+  // Recovery time from training readiness
+  const tr = g?.training_readiness?.trainingReadiness ?? g?.training_readiness;
+  if (tr) {
+    if (tr?.score != null) L.push(`  Readiness Score: ${tr.score}/100`);
+    const recHrs = tr?.recoveryTime ?? tr?.recoveryTimeSeconds != null ? Math.round((tr?.recoveryTimeSeconds ?? 0) / 3600) : null;
+    const recFinal = tr?.recoveryTime ?? recHrs;
+    if (recFinal != null) L.push(`  Recovery Time:   ${recFinal} hours remaining`);
+  }
+
+  // ── Lactate Threshold ──
+  L.push('');
+  L.push('LACTATE THRESHOLD');
+  const lt = g?.lactate_threshold;
+  if (lt && !g?.lactate_threshold_error) {
+    const ltHR = lt?.lactateThresholdHeartRate ?? lt?.heartRate ?? lt?.hrBpm ?? null;
+    const ltPace = lt?.pacePer1000mInSeconds ?? lt?.paceInSeconds ?? null;
+    const ltSpeed = lt?.maxSpeedInMetersPerSecond ?? null;
+    L.push(`  Heart Rate:      ${ltHR != null ? ltHR + ' bpm' : '—'}`);
+    if (ltPace != null) {
+      const min = Math.floor(ltPace / 60), sec = Math.round(ltPace % 60);
+      L.push(`  Pace:            ${min}:${String(sec).padStart(2,'0')} /km`);
+    } else if (ltSpeed != null && ltSpeed > 0) {
+      const sPerKm = 1000 / ltSpeed;
+      const min = Math.floor(sPerKm / 60), sec = Math.round(sPerKm % 60);
+      L.push(`  Pace:            ${min}:${String(sec).padStart(2,'0')} /km`);
+    }
+  } else {
+    L.push('  No lactate threshold data available');
+  }
+
+  // ── Race Predictions ──
+  L.push('');
+  L.push('RACE PREDICTIONS');
+  const rp = g?.race_predictions;
+  if (Array.isArray(rp) && rp.length) {
+    const distMap = {
+      DISTANCE_1MILE: '1 Mile', MILES_1: '1 Mile',
+      DISTANCE_5K: '5K', DISTANCE_5000M: '5K',
+      DISTANCE_10K: '10K', DISTANCE_10000M: '10K',
+      DISTANCE_HALF_MARATHON: 'Half Marathon', DISTANCE_21097M: 'Half Marathon',
+      DISTANCE_MARATHON: 'Marathon', DISTANCE_42195M: 'Marathon',
+    };
+    rp.forEach(pred => {
+      const unit = pred?.distancePredictionUnit ?? pred?.racePredictorResult?.distancePredictionUnit ?? '';
+      const secs = pred?.finishTime ?? pred?.racePredictorResult?.finishTime ?? null;
+      if (secs == null) return;
+      const label = distMap[unit] ?? unit.replace(/DISTANCE_/, '').replace(/_/g,' ');
+      L.push(`  ${(label + ':').padEnd(18)} ${fmtRaceTime(secs)}`);
+    });
+  } else {
+    L.push('  No race prediction data available');
+  }
+
+  return L;
+}
+
+function formatStravaSection(s, thinHr) {
+  const L = [];
+  L.push(thinHr);
+  L.push('STRAVA — LATEST RUN');
+  L.push(thinHr);
+
+  if (s?.error) {
+    L.push(`  ✗ Error: ${s.error}`);
+    return L;
+  }
+
+  const a = s?.activity;
+  if (!a) {
+    L.push('  No activity data returned');
+    return L;
+  }
+
+  const startDate = new Date(a.start_date_local || a.start_date);
+  const dateStr = startDate.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = startDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  L.push('');
+  L.push(`  Activity:        ${a.name}`);
+  L.push(`  Date:            ${dateStr} at ${timeStr}`);
+  L.push(`  Distance:        ${(a.distance / 1000).toFixed(2)} km  (${(a.distance / 1609.34).toFixed(2)} mi)`);
+  L.push(`  Moving Time:     ${fmtHMS(a.moving_time)}`);
+  if (a.elapsed_time && a.elapsed_time !== a.moving_time) {
+    L.push(`  Elapsed Time:    ${fmtHMS(a.elapsed_time)}`);
+  }
+
+  // Average pace
+  if (a.average_speed && a.average_speed > 0) {
+    const sPerKm = 1000 / a.average_speed;
+    const bsPerKm = 1000 / a.max_speed;
+    L.push(`  Avg Pace:        ${fmtPace(sPerKm)}  /km`);
+    L.push(`  Best Pace:       ${fmtPace(bsPerKm)}  /km`);
+  }
+
+  if (a.average_heartrate) L.push(`  Avg HR:          ${Math.round(a.average_heartrate)} bpm`);
+  if (a.max_heartrate)     L.push(`  Max HR:          ${Math.round(a.max_heartrate)} bpm`);
+  if (a.average_cadence)   L.push(`  Avg Cadence:     ${Math.round(a.average_cadence * 2)} spm`);
+  if (a.average_watts)     L.push(`  Avg Power:       ${Math.round(a.average_watts)} W`);
+  if (a.total_elevation_gain != null) {
+    L.push(`  Elevation:       +${Math.round(a.total_elevation_gain)} m`);
+  }
+  if (a.calories)          L.push(`  Calories:        ${Math.round(a.calories)} kcal`);
+  if (a.suffer_score)      L.push(`  Suffer Score:    ${a.suffer_score}`);
+  if (a.perceived_exertion != null) L.push(`  Perceived Exertion: ${a.perceived_exertion}/10`);
+  if (a.description)       L.push(`  Note:            ${a.description}`);
+
+  // Stream table
+  const intervals = s?.intervals;
+  if (intervals?.length) {
+    L.push('');
+    L.push(`SPLIT DATA — 100m INTERVALS  (${intervals.length} points)`);
+    L.push('');
+
+    // Determine which columns have data
+    const hasPace    = intervals.some(p => p.paceStr);
+    const hasHR      = intervals.some(p => p.hr != null);
+    const hasAlt     = intervals.some(p => p.altitude != null);
+    const hasGrade   = intervals.some(p => p.grade != null);
+    const hasCad     = intervals.some(p => p.cadence != null);
+    const hasStride  = intervals.some(p => p.stride != null);
+    const hasPower   = intervals.some(p => p.power != null);
+
+    const cols = ['Dist'];
+    if (hasPace)   cols.push('Pace');
+    if (hasHR)     cols.push('HR');
+    if (hasAlt)    cols.push('Alt');
+    if (hasGrade)  cols.push('Grade');
+    if (hasCad)    cols.push('Cad');
+    if (hasStride) cols.push('Stride');
+    if (hasPower)  cols.push('Power');
+
+    const widths = {
+      Dist: 7, Pace: 10, HR: 5, Alt: 8, Grade: 7, Cad: 5, Stride: 7, Power: 7
+    };
+
+    const header = cols.map(c => c.padEnd(widths[c])).join(' │ ');
+    const divider = cols.map(c => '─'.repeat(widths[c])).join('─┼─');
+    L.push('  ' + header);
+    L.push('  ' + divider);
+
+    intervals.forEach(p => {
+      const distKm = (p.distance / 1000).toFixed(1);
+      const row = [];
+      row.push((`${distKm} km`).padEnd(widths.Dist));
+      if (hasPace)   row.push((p.paceStr ?? '—').padEnd(widths.Pace));
+      if (hasHR)     row.push((p.hr != null ? String(Math.round(p.hr)) : '—').padEnd(widths.HR));
+      if (hasAlt)    row.push((p.altitude != null ? p.altitude.toFixed(1) + 'm' : '—').padEnd(widths.Alt));
+      if (hasGrade)  row.push((p.grade != null ? (p.grade >= 0 ? '+' : '') + p.grade.toFixed(1) + '%' : '—').padEnd(widths.Grade));
+      if (hasCad)    row.push((p.cadence != null ? String(p.cadence) : '—').padEnd(widths.Cad));
+      if (hasStride) row.push((p.stride != null ? p.stride.toFixed(2) + 'm' : '—').padEnd(widths.Stride));
+      if (hasPower)  row.push((p.power != null ? Math.round(p.power) + 'W' : '—').padEnd(widths.Power));
+      L.push('  ' + row.join(' │ '));
+    });
+  }
+
+  return L;
+}
+
+// ─── UI helpers ───────────────────────────────────────────────────────────────
+function showReport(text) {
+  document.getElementById('report-section').style.display = 'block';
+  document.getElementById('report-output').textContent = text;
+  document.getElementById('report-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('btn-copy').textContent = 'Copy to clipboard';
+  document.getElementById('btn-copy').classList.remove('copied');
+  window._reportText = text;
+}
+
+async function copyReport() {
+  const btn = document.getElementById('btn-copy');
+  try {
+    await navigator.clipboard.writeText(window._reportText || '');
+    btn.textContent = '✓ Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy to clipboard';
+      btn.classList.remove('copied');
+    }, 2500);
+  } catch {
+    btn.textContent = 'Copy failed — try selecting text manually';
+  }
+}
+
+function dot(id, cls) {
+  const el = document.getElementById(id);
+  el.className = 'dot' + (cls ? ' ' + cls : '');
+}
+
+function setStatus(id, msg, cls) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = 'status-line' + (cls ? ' ' + cls : '');
+}
+
+function setMsg(msg, cls) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = cls || '';
+}
+
+// ─── Utility formatters ───────────────────────────────────────────────────────
+function fmtHMS(seconds) {
+  if (seconds == null || seconds === 0) return '—';
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sc = s % 60;
+  if (h > 0) return `${h}h ${String(m).padStart(2,'0')}m ${String(sc).padStart(2,'0')}s`;
+  if (m > 0) return `${m}m ${String(sc).padStart(2,'0')}s`;
+  return `${sc}s`;
+}
+
+function fmtPace(secPerKm) {
+  if (!secPerKm || secPerKm <= 0) return '—';
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.round(secPerKm % 60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function fmtRaceTime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function titleCase(str) {
+  return String(str).toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function center(str, width) {
+  const pad = Math.max(0, Math.floor((width - str.length) / 2));
+  return ' '.repeat(pad) + str;
+}
+
+function stressLabel(val) {
+  if (val < 26) return '  (Low)';
+  if (val < 51) return '  (Medium)';
+  if (val < 76) return '  (High)';
+  return '  (Very High)';
+}
+</script>
+</body>
+</html>
