@@ -10,6 +10,7 @@
 
 [functions."garmin-data"]
   timeout = 26
+  node_bundler = "nft"
 
 [[redirects]]
   from = "/api/*"
