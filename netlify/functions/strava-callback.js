@@ -1,6 +1,8 @@
 exports.handler = async (event) => {
   const { code, error, error_description } = event.queryStringParameters || {};
-  const siteUrl = process.env.URL || 'http://localhost:8888';
+  const proto = event.headers['x-forwarded-proto'] || 'https';
+  const host = event.headers['x-forwarded-host'] || event.headers['host'];
+  const siteUrl = `${proto}://${host}`;
 
   if (error) {
     return {

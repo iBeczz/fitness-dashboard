@@ -1,4 +1,4 @@
-exports.handler = async () => {
+exports.handler = async (event) => {
   const clientId = process.env.STRAVA_CLIENT_ID;
   if (!clientId) {
     return {
@@ -8,7 +8,9 @@ exports.handler = async () => {
     };
   }
 
-  const siteUrl = process.env.URL || 'http://localhost:8888';
+  const proto = event.headers['x-forwarded-proto'] || 'https';
+  const host = event.headers['x-forwarded-host'] || event.headers['host'];
+  const siteUrl = `${proto}://${host}`;
   const redirectUri = `${siteUrl}/.netlify/functions/strava-callback`;
   const scope = 'activity:read_all';
   const authUrl =
