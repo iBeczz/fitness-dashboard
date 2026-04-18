@@ -530,15 +530,21 @@ exports.handler = async (event) => {
     await GCClient.login();
   } catch (e) {
     const msg = String(e.message || e);
-    const isAuth = msg.toLowerCase().includes('auth') ||
-                   msg.toLowerCase().includes('credential') ||
-                   msg.toLowerCase().includes('invalid') ||
-                   msg.includes('401') || msg.includes('403');
-    return {
-      statusCode: isAuth ? 401 : 500,
-      headers: cors,
-      body: JSON.stringify({ error: `Garmin login failed: ${msg}` }),
-    };
+    const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
+    if (is429) {
+      // SSO auth succeeded (Garmin sends device-login email) but a post-login
+      // profile fetch was rate-limited. Session tokens are already set — continue.
+    } else {
+      const isAuth = msg.toLowerCase().includes('auth') ||
+                     msg.toLowerCase().includes('credential') ||
+                     msg.toLowerCase().includes('invalid') ||
+                     msg.includes('401') || msg.includes('403');
+      return {
+        statusCode: isAuth ? 401 : 500,
+        headers: cors,
+        body: JSON.stringify({ error: `Garmin login failed: ${msg}` }),
+      };
+    }
   }
 
   async function safeGet(fn) {
