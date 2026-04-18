@@ -1,4 +1,5 @@
 'use strict';
+const { GarminConnect } = require('garmin-connect');
 
 // ── Format helpers ──────────────────────────────────────────────
 
@@ -487,19 +488,6 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: cors, body: '' };
   }
 
-  // Dynamic import handles both CJS and ESM builds of garmin-connect
-  let GarminConnect;
-  try {
-    const gc = await import('garmin-connect');
-    GarminConnect = gc.GarminConnect || gc.default?.GarminConnect || gc.default;
-    if (!GarminConnect) throw new Error('GarminConnect class not found in module exports');
-  } catch (e) {
-    return {
-      statusCode: 500,
-      headers: cors,
-      body: JSON.stringify({ error: `Cannot load garmin-connect module: ${e.message}` }),
-    };
-  }
 
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch {}

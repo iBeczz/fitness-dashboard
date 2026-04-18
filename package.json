@@ -2,5 +2,8 @@
   "name": "fitness-report",
   "version": "1.0.0",
   "description": "Strava + Garmin Connect fitness report generator",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "garmin-connect": "^2.0.0"
+  }
 }
