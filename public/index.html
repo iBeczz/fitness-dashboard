@@ -1516,7 +1516,7 @@ async function connectGarmin() {
       return;
     }
     if (!resp.ok) {
-      errEl.textContent = data.error || 'Connection failed';
+      errEl.textContent = data.error || data.errorMessage || `Server error ${resp.status}`;
       btn.disabled = false; btn.textContent = 'Connect';
       return;
     }
@@ -1615,7 +1615,7 @@ async function doFetchGarminData() {
       return;
     }
     if (!resp.ok) {
-      resultEl.innerHTML = `<div class="error-banner">${data.error || 'Garmin fetch failed'}</div>`;
+      resultEl.innerHTML = `<div class="error-banner">${data.error || data.errorMessage || `Server error ${resp.status}`}</div>`;
       fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch Garmin Data';
       return;
     }
