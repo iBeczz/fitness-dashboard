@@ -1621,7 +1621,10 @@ async function doFetchGarminData() {
     }
     if (data.token_data) { garminTokenData = data.token_data; saveGarminTokens(data.token_data); }
     garminData = data.report_text;
-    resultEl.innerHTML = `<pre class="garmin-report">${escapeHtml(data.report_text)}</pre>`;
+    const errDebug = data.fetch_errors && Object.keys(data.fetch_errors).length
+      ? `\n\n<details style="margin-top:8px;font-size:11px;color:var(--muted)"><summary>Debug: fetch errors</summary><pre>${escapeHtml(JSON.stringify(data.fetch_errors, null, 2))}</pre></details>`
+      : '';
+    resultEl.innerHTML = `<pre class="garmin-report">${escapeHtml(data.report_text)}</pre>${errDebug}`;
   } catch (e) {
     const msg = e.name === 'TimeoutError'
       ? 'Request timed out (>30s). First connection can be slow — try again to use the cached token.'

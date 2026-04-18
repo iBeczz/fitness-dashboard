@@ -547,21 +547,29 @@ exports.handler = async (event) => {
     }
   }
 
-  async function safeGet(fn) {
-    try { return await fn(); } catch { return null; }
+  const fetchErrors = {};
+
+  async function safeGet(fn, label) {
+    try { return await fn(); } catch (e) {
+      if (label) fetchErrors[label] = String(e.message || e).slice(0, 120);
+      return null;
+    }
   }
 
-  async function withFallback(todayFn, yesterdayFn) {
-    const result = await safeGet(todayFn);
-    if (result != null) return result;
-    return safeGet(yesterdayFn);
+  async function withFallback(label, todayFn, yesterdayFn) {
+    try {
+      const r = await todayFn();
+      if (r != null) return r;
+    } catch (e) {
+      fetchErrors[label + '_today'] = String(e.message || e).slice(0, 120);
+    }
+    return safeGet(yesterdayFn, label + '_yesterday');
   }
 
   async function rawGet(path) {
     try {
-      // Try the GarminConnect client's get method with the full URL
       return await GCClient.get('https://connect.garmin.com' + path);
-    } catch {
+    } catch (e) {
       return null;
     }
   }
@@ -572,7 +580,10 @@ exports.handler = async (event) => {
       const raw = await GCClient.getHeartRateData(dateString);
       if (!raw) return null;
       return raw.restingHeartRate || extractRhrValue(raw) || null;
-    } catch { return null; }
+    } catch (e) {
+      fetchErrors['rhr_' + dateString] = String(e.message || e).slice(0, 80);
+      return null;
+    }
   }
 
   const rhrDays = Array.from({ length: 7 }, (_, i) => {
@@ -587,41 +598,41 @@ exports.handler = async (event) => {
     mmNowR, mm4wR, tsR, readinessR, raceR, lactateR,
     ...rhrWeekR
   ] = await Promise.allSettled([
-    withFallback(
+    withFallback('sleep',
       () => GCClient.getSleepData(dateStr),
       () => GCClient.getSleepData(yesterdayStr)
     ),
-    withFallback(
+    withFallback('hrv',
       () => rawGet(`/proxy/hrv-service/hrv/${dateStr}`),
       () => rawGet(`/proxy/hrv-service/hrv/${yesterdayStr}`)
     ),
-    withFallback(
+    withFallback('bb',
       () => GCClient.getBodyBattery(dateStr, dateStr),
       () => GCClient.getBodyBattery(yesterdayStr, yesterdayStr)
     ),
-    withFallback(
+    withFallback('stress',
       () => GCClient.getStressData(dateStr),
       () => GCClient.getStressData(yesterdayStr)
     ),
-    withFallback(
+    withFallback('hr',
       () => GCClient.getHeartRateData(dateStr),
       () => GCClient.getHeartRateData(yesterdayStr)
     ),
-    withFallback(
+    withFallback('mm_now',
       () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${dateStr}`),
       () => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${yesterdayStr}`)
     ),
-    safeGet(() => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${fourWeeksAgoStr}`)),
-    withFallback(
+    safeGet(() => rawGet(`/proxy/metrics-service/metrics/maxmet/weekly/${fourWeeksAgoStr}`), 'mm_4w'),
+    withFallback('ts',
       () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${dateStr}`),
       () => rawGet(`/proxy/metrics-service/metrics/trainingstatus/aggregated/${yesterdayStr}`)
     ),
-    withFallback(
+    withFallback('readiness',
       () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${dateStr}`),
       () => rawGet(`/proxy/metrics-service/metrics/trainingreadiness/${yesterdayStr}`)
     ),
-    safeGet(() => rawGet('/proxy/metrics-service/metrics/racepredictions')),
-    safeGet(() => rawGet('/proxy/biometric-service/lactateThreshold')),
+    safeGet(() => rawGet('/proxy/metrics-service/metrics/racepredictions'), 'race'),
+    safeGet(() => rawGet('/proxy/biometric-service/lactateThreshold'), 'lactate'),
     ...rhrDays.map(d => getRhrDay(d)),
   ]);
 
@@ -675,6 +686,6 @@ exports.handler = async (event) => {
   return {
     statusCode: 200,
     headers: cors,
-    body: JSON.stringify({ report_text: reportText }),
+    body: JSON.stringify({ report_text: reportText, fetch_errors: fetchErrors }),
   };
 };
