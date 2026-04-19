@@ -531,21 +531,26 @@ exports.handler = async (event) => {
   } catch (e) {
     const msg = String(e.message || e);
     const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
-    if (is429) {
-      // SSO auth succeeded (Garmin sends device-login email) but a post-login
-      // profile fetch was rate-limited. Session tokens are already set — continue.
-    } else {
-      const isAuth = msg.toLowerCase().includes('auth') ||
-                     msg.toLowerCase().includes('credential') ||
-                     msg.toLowerCase().includes('invalid') ||
-                     msg.includes('401') || msg.includes('403');
-      return {
-        statusCode: isAuth ? 401 : 500,
-        headers: cors,
-        body: JSON.stringify({ error: `Garmin login failed: ${msg}` }),
-      };
-    }
+    const isAuth = !is429 && (msg.toLowerCase().includes('auth') ||
+                   msg.toLowerCase().includes('credential') ||
+                   msg.toLowerCase().includes('invalid') ||
+                   msg.includes('401') || msg.includes('403'));
+    return {
+      statusCode: is429 ? 429 : (isAuth ? 401 : 500),
+      headers: cors,
+      body: JSON.stringify({
+        error: is429
+          ? 'Garmin rate limit — your credentials are correct. Wait 30–60 min then try again.'
+          : `Garmin login failed: ${msg}`,
+      }),
+    };
   }
+
+  // Expose session internals so we can implement token caching
+  const sessionDebug = {
+    own_keys: Object.keys(GCClient),
+    proto_keys: Object.getOwnPropertyNames(Object.getPrototypeOf(GCClient)).slice(0, 30),
+  };
 
   const fetchErrors = {};
 
@@ -690,6 +695,6 @@ exports.handler = async (event) => {
   return {
     statusCode: 200,
     headers: cors,
-    body: JSON.stringify({ report_text: reportText, fetch_errors: fetchErrors }),
+    body: JSON.stringify({ report_text: reportText, fetch_errors: fetchErrors, session_debug: sessionDebug }),
   };
 };

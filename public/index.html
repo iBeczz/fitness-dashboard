@@ -1621,8 +1621,13 @@ async function doFetchGarminData() {
     }
     if (data.token_data) { garminTokenData = data.token_data; saveGarminTokens(data.token_data); }
     garminData = data.report_text;
-    const errDebug = data.fetch_errors && Object.keys(data.fetch_errors).length
-      ? `\n\n<details style="margin-top:8px;font-size:11px;color:var(--muted)"><summary>Debug: fetch errors</summary><pre>${escapeHtml(JSON.stringify(data.fetch_errors, null, 2))}</pre></details>`
+    const debugParts = [];
+    if (data.fetch_errors && Object.keys(data.fetch_errors).length)
+      debugParts.push(`<b>Fetch errors:</b>\n${escapeHtml(JSON.stringify(data.fetch_errors, null, 2))}`);
+    if (data.session_debug)
+      debugParts.push(`<b>Session keys:</b>\n${escapeHtml(JSON.stringify(data.session_debug, null, 2))}`);
+    const errDebug = debugParts.length
+      ? `<details style="margin-top:8px;font-size:11px;color:var(--muted)"><summary>Debug info</summary><pre>${debugParts.join('\n\n')}</pre></details>`
       : '';
     resultEl.innerHTML = `<pre class="garmin-report">${escapeHtml(data.report_text)}</pre>${errDebug}`;
   } catch (e) {
