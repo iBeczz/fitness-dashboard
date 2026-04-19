@@ -495,7 +495,9 @@ exports.handler = async (event) => {
 
   const { email = '', password = '', report_date, cutoff_ms } = body;
 
-  if (!email || !password) {
+  const cachedTokens = body.token_data; // { oauth1: {...}, oauth2: {...} } from previous login
+
+  if (!cachedTokens && (!email || !password)) {
     return {
       statusCode: 400,
       headers: cors,
@@ -523,34 +525,55 @@ exports.handler = async (event) => {
   fourWeeksAgo.setUTCDate(fourWeeksAgo.getUTCDate() - 28);
   const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0];
 
-  // Auth
+  // Auth — restore from cached OAuth tokens if available, otherwise do full login
   let GCClient;
-  try {
-    GCClient = new GarminConnect({ username: email, password });
-    await GCClient.login();
-  } catch (e) {
-    const msg = String(e.message || e);
-    const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
-    const isAuth = !is429 && (msg.toLowerCase().includes('auth') ||
-                   msg.toLowerCase().includes('credential') ||
-                   msg.toLowerCase().includes('invalid') ||
-                   msg.includes('401') || msg.includes('403'));
-    return {
-      statusCode: is429 ? 429 : (isAuth ? 401 : 500),
-      headers: cors,
-      body: JSON.stringify({
-        error: is429
-          ? 'Garmin rate limit — your credentials are correct. Wait 30–60 min then try again.'
-          : `Garmin login failed: ${msg}`,
-      }),
-    };
+
+  if (cachedTokens?.oauth1 && cachedTokens?.oauth2) {
+    // Reuse cached tokens — skips SSO entirely, no rate limit risk
+    try {
+      GCClient = new GarminConnect({ username: email || '', password: password || '' });
+      GCClient.loadToken(cachedTokens.oauth1, cachedTokens.oauth2);
+    } catch (e) {
+      GCClient = null; // fall through to fresh login
+    }
   }
 
-  // Expose session internals so we can implement token caching
-  const sessionDebug = {
-    own_keys: Object.keys(GCClient),
-    proto_keys: Object.getOwnPropertyNames(Object.getPrototypeOf(GCClient)).slice(0, 30),
-  };
+  if (!GCClient) {
+    if (!email || !password) {
+      return {
+        statusCode: 401,
+        headers: cors,
+        body: JSON.stringify({ error: 'Session expired — please reconnect with your Garmin credentials.' }),
+      };
+    }
+    try {
+      GCClient = new GarminConnect({ username: email, password });
+      await GCClient.login();
+    } catch (e) {
+      const msg = String(e.message || e);
+      const is429 = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
+      const isAuth = !is429 && (msg.toLowerCase().includes('auth') ||
+                     msg.toLowerCase().includes('credential') ||
+                     msg.toLowerCase().includes('invalid') ||
+                     msg.includes('401') || msg.includes('403'));
+      return {
+        statusCode: is429 ? 429 : (isAuth ? 401 : 500),
+        headers: cors,
+        body: JSON.stringify({
+          error: is429
+            ? 'Garmin rate limit — your credentials are correct. Wait 30–60 min then try again.'
+            : `Garmin login failed: ${msg}`,
+        }),
+      };
+    }
+  }
+
+  // Export OAuth tokens so the frontend can cache them and skip login next time
+  let newTokenData = cachedTokens || null;
+  try {
+    const exported = GCClient.exportToken();
+    if (exported && (exported.oauth1 || exported.oauth2)) newTokenData = exported;
+  } catch {}
 
   const fetchErrors = {};
 
@@ -695,6 +718,6 @@ exports.handler = async (event) => {
   return {
     statusCode: 200,
     headers: cors,
-    body: JSON.stringify({ report_text: reportText, fetch_errors: fetchErrors, session_debug: sessionDebug }),
+    body: JSON.stringify({ report_text: reportText, token_data: newTokenData, fetch_errors: fetchErrors }),
   };
 };
