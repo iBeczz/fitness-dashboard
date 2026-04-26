@@ -1744,11 +1744,11 @@ function copyToClipboard() {
 
   const pausesByMarker = {};
   pauses.forEach(p => {
-    const marker = Math.ceil(p.pauseDist / 100) * 100;
+    const marker = Math.ceil(p.pauseDist / 50) * 50;
     pausesByMarker[marker] = p;
   });
 
-  for (let marker = 0; marker <= totalDist; marker += 100) {
+  for (let marker = 0; marker <= totalDist; marker += 50) {
     if (pausesByMarker[marker]) {
       const p = pausesByMarker[marker];
       stream100m.push({ isPause: true, pauseDist: (p.pauseDist/1000).toFixed(2), resumeDist: (p.resumeDist/1000).toFixed(2), pauseTime: fmtTime(p.pauseTime), resumeTime: fmtTime(p.resumeTime), duration: fmtTime(p.duration) });
@@ -1844,7 +1844,7 @@ ${splits.map(s => `  KM ${s.km}: pace ${s.pace}/km · HR ${s.hr} · elev ${s.ele
 NOTABLE MOMENTS
 ${spikes.map(s => `  ${s.at} -- ${s.title} (${s.detail})`).join('\n')}
 
-RAW STREAM (every 100m)
+RAW STREAM (every 50m)
 Columns: dist | elapsed | pace | ${hasGAP?'GAP | ':''}HR | altitude | grade${hasCad?' | cadence':''}${hasStride?' | stride':''}${hasWatts?' | power':''}${hasTemp?' | temp':''}
 ${streamLines}${garminData ? '\n\n' + garminData : ''}`;
 
